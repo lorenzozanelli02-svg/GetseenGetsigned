@@ -1,4 +1,4 @@
-import { unlockAccess } from "./access";
+import { unlockAccess } from "./store";
 
 export const DASHBOARD_PATH = "/dashboard";
 
@@ -13,6 +13,6 @@ export const DASHBOARD_PATH = "/dashboard";
  * Stripe webhook rather than here.
  */
 export async function startCheckout(): Promise<void> {
-  unlockAccess();
+  await unlockAccess();
   window.location.assign(DASHBOARD_PATH);
 }

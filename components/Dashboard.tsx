@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { hasAccess, resetAccess } from "@/lib/access";
-import { BuyButton } from "./BuyButton";
+import { resetAccess } from "@/lib/store";
 import { Eyebrow } from "./Eyebrow";
 
 // None of these tools are built yet; they show as "Coming soon" and don't link anywhere.
@@ -16,27 +14,6 @@ const TOOLS = [
 const titleClass = "mt-3 font-display text-4xl leading-[0.95] font-extrabold uppercase text-balance sm:text-5xl";
 
 export function Dashboard() {
-  // null until we've read localStorage, which only exists in the browser.
-  const [access, setAccess] = useState<boolean | null>(null);
-  useEffect(() => setAccess(hasAccess()), []);
-
-  if (access === null) return <div className="min-h-64" aria-busy="true" />;
-
-  if (!access) {
-    return (
-      <div className="max-w-xl">
-        <Eyebrow>Dashboard</Eyebrow>
-        <h1 className={titleClass}>
-          You don&rsquo;t have <span className="text-accent">access yet</span>
-        </h1>
-        <p className="mt-4 text-base leading-relaxed text-muted sm:text-lg">
-          Get lifetime access to unlock your dashboard and tools.
-        </p>
-        <BuyButton className="mt-8" />
-      </div>
-    );
-  }
-
   return (
     <div>
       <Eyebrow>Lifetime access</Eyebrow>
@@ -61,9 +38,9 @@ export function Dashboard() {
       </ul>
       <button
         type="button"
-        onClick={() => {
-          resetAccess();
-          setAccess(false);
+        onClick={async () => {
+          await resetAccess();
+          window.location.reload();
         }}
         className="mt-10 cursor-pointer text-sm text-muted underline underline-offset-4 transition-colors hover:text-accent"
       >

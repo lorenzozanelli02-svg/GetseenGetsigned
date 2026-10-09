@@ -14,6 +14,9 @@
   --color-accent: #3be584;
   --color-accent-hover: #6cf0a5;
   --color-on-accent: #03130a;
+  /* Status colours for follow-ups, kept separate from the brand accent. */
+  --color-warn: #f2b84b;
+  --color-danger: #ff7a6b;
 }
 
 @theme inline {
