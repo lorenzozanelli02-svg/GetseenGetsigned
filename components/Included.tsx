@@ -38,8 +38,7 @@ export function Included() {
         </ul>
 
         <div
-          id="buy"
-          className="mt-16 scroll-mt-8 rounded-3xl border border-accent/25 bg-[radial-gradient(120%_140%_at_50%_0%,rgb(59_229_132/0.14),transparent_60%)] px-6 py-12 text-center sm:px-12 sm:py-16"
+          className="mt-16 rounded-3xl border border-accent/25 bg-[radial-gradient(120%_140%_at_50%_0%,rgb(59_229_132/0.14),transparent_60%)] px-6 py-12 text-center sm:px-12 sm:py-16"
         >
           <h2 className="font-display text-4xl leading-[0.95] font-extrabold uppercase text-balance sm:text-5xl">
             Ready to <span className="text-accent">get seen?</span>
