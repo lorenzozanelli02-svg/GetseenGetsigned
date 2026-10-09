@@ -1,22 +1,49 @@
 import { ageFrom, formatDate } from "@/lib/dates";
-import { formatHeight, POSITION_NAMES, previousClubList, statItems } from "@/lib/profile";
+import { careerRows, cleanList, formatHeight, formatWeight, POSITION_NAMES, statItems } from "@/lib/profile";
 import type { Profile } from "@/lib/store";
 import { embedUrl, isLink } from "@/lib/video";
 
+const label = "text-xs font-semibold uppercase tracking-[0.18em] text-muted";
+
 /**
  * The player card. Used as the live preview in the Profile Builder (preview=true shows
- * placeholders for empty fields) and as the public player page (empty parts are hidden).
+ * placeholders for the key fields) and as the public player page. Empty sections are hidden.
  */
 export function PlayerCard({ profile, preview = false }: { profile: Profile; preview?: boolean }) {
   const age = ageFrom(profile.dob);
   const height = formatHeight(profile.heightCm);
+  const weight = formatWeight(profile.physical.weightKg);
   const video = embedUrl(profile.highlightUrl);
-  const clubs = previousClubList(profile);
   const stats = statItems(profile);
   const hasStats = stats.some((s) => s.value);
+  const career = careerRows(profile);
+  const strengths = cleanList(profile.strengths);
+  const honours = cleanList(profile.honours);
   const club = [profile.club.trim(), profile.level.trim()].filter(Boolean).join(" · ");
-  const coach = profile.coach;
+  const { coach, contact, physical, availability, education } = profile;
   const positions = profile.positions.map((p) => POSITION_NAMES[p] ?? p).join(" / ");
+  const showContact = preview || profile.showContactPublic;
+  const hasContact = !!(contact.phone.trim() || contact.email.trim());
+
+  const physicalRows = [
+    ["Weight", weight],
+    ["Sprint", physical.sprint.trim()],
+    ["Fitness test", physical.fitness.trim()],
+  ];
+  const availabilityRows = [
+    ["Trials", availability.trials.trim()],
+    ["Travel", availability.travel.trim()],
+  ];
+  const educationRows = [
+    ["School or college", education.school.trim()],
+    ["Grades", education.grades.trim()],
+    ["Graduating", education.graduationYear.trim()],
+  ];
+  const detailGroups = [
+    { title: "Physical", rows: physicalRows },
+    { title: "Availability", rows: availabilityRows },
+    { title: "Education", rows: educationRows },
+  ].filter((g) => g.rows.some(([, v]) => v));
 
   return (
     <article className="@container overflow-hidden rounded-3xl border border-line bg-surface shadow-[0_0_80px_-40px_var(--color-accent)]">
@@ -34,9 +61,7 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
           )}
         </div>
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
-            {positions || (preview ? "Your position" : "")}
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">{positions || (preview ? "Your position" : "")}</p>
           <h2 className="mt-2 font-display text-[2.6rem] leading-[0.9] font-extrabold uppercase break-words @md:text-[3.25rem]">
             {profile.name || <span className="text-muted/50">Your name</span>}
           </h2>
@@ -45,15 +70,21 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
             <Meta label="Age" value={age !== null ? String(age) : ""} preview={preview} />
             <Meta label="Foot" value={profile.foot} preview={preview} />
             <Meta label="Height" value={height} preview={preview} wide />
+            <Meta label="Based in" value={contact.location.trim()} preview={false} />
+            <Meta label="Nationality" value={contact.nationality.trim()} preview={false} />
           </dl>
         </div>
+        {profile.lookingFor.trim() && (
+          <div className="rounded-xl border-l-2 border-accent bg-accent/8 px-4 py-3 @md:col-span-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">Looking for</p>
+            <p className="mt-1 text-[15px] font-medium">{profile.lookingFor.trim()}</p>
+          </div>
+        )}
       </div>
 
       {(hasStats || preview) && (
         <div className="border-y border-line px-5 py-5 @md:px-7">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-            {profile.stats.season.trim() ? `${profile.stats.season.trim()} season` : "This season"}
-          </p>
+          <p className={label}>{profile.stats.season.trim() ? `${profile.stats.season.trim()} season` : "This season"}</p>
           <dl className="mt-3 grid gap-3" style={{ gridTemplateColumns: `repeat(${stats.length}, minmax(0, 1fr))` }}>
             {stats.map((s) => (
               <div key={s.label} className="flex min-w-0 flex-col-reverse">
@@ -67,7 +98,7 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
         </div>
       )}
 
-      <div className="grid gap-6 p-5 @md:p-7">
+      <div className="grid gap-7 p-5 @md:p-7">
         {video ? (
           <div className="aspect-video overflow-hidden rounded-xl bg-bg ring-1 ring-line">
             <iframe
@@ -92,22 +123,81 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
 
         {profile.bio.trim() && <p className="text-[15px] leading-relaxed whitespace-pre-line text-ink/85">{profile.bio.trim()}</p>}
 
-        {clubs.length > 0 && (
+        {strengths.length > 0 && (
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Previous clubs</h3>
-            <ul className="mt-2 flex flex-wrap gap-2">
-              {clubs.map((c) => (
-                <li key={c} className="rounded-full border border-line px-3 py-1 text-sm">
-                  {c}
+            <h3 className={label}>Key strengths</h3>
+            <ul className="mt-2.5 flex flex-wrap gap-2">
+              {strengths.map((s) => (
+                <li key={s} className="rounded-full bg-accent/12 px-3 py-1 text-sm font-semibold text-accent">
+                  {s}
                 </li>
               ))}
             </ul>
           </div>
         )}
 
+        {career.length > 0 && (
+          <div>
+            <h3 className={label}>Career history</h3>
+            <ul className="mt-2 divide-y divide-line">
+              {career.map((c) => (
+                <li key={c.key} className="flex items-start justify-between gap-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="font-semibold break-words">
+                      {c.club}
+                      {c.current && <span className="ml-2 rounded-full bg-accent/12 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wider text-accent">Current</span>}
+                    </p>
+                    <p className="text-sm text-muted">{[c.seasons, c.level].filter(Boolean).join(" · ")}</p>
+                  </div>
+                  {(c.appearances || c.goals) && (
+                    <p className="shrink-0 text-right text-sm tabular-nums">
+                      {c.appearances && <span className="block">{c.appearances} apps</span>}
+                      {c.goals && <span className="block text-muted">{c.goals} goals</span>}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {honours.length > 0 && (
+          <div>
+            <h3 className={label}>Honours and representative football</h3>
+            <ul className="mt-2.5 grid gap-1.5 text-[15px]">
+              {honours.map((h) => (
+                <li key={h} className="flex gap-3">
+                  <span aria-hidden="true" className="mt-2.5 h-px w-3.5 shrink-0 bg-accent" />
+                  {h}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {detailGroups.length > 0 && (
+          <div className="grid gap-6 @md:grid-cols-2">
+            {detailGroups.map((g) => (
+              <div key={g.title}>
+                <h3 className={label}>{g.title}</h3>
+                <dl className="mt-2 grid gap-1.5 text-[15px]">
+                  {g.rows
+                    .filter(([, v]) => v)
+                    .map(([k, v]) => (
+                      <div key={k} className="flex flex-wrap gap-x-2">
+                        <dt className="text-muted">{k}:</dt>
+                        <dd className="min-w-0 break-words">{v}</dd>
+                      </div>
+                    ))}
+                </dl>
+              </div>
+            ))}
+          </div>
+        )}
+
         {(coach.name.trim() || preview) && (
           <div className="rounded-2xl border border-line bg-bg/60 p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Coach reference</h3>
+            <h3 className={label}>Coach reference</h3>
             {coach.name.trim() ? (
               <div className="mt-2 text-[15px]">
                 <p className="font-semibold">{coach.name}</p>
@@ -120,9 +210,24 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
           </div>
         )}
 
-        {!preview && profile.updatedAt && (
-          <p className="text-xs text-muted">Updated {formatDate(profile.updatedAt.slice(0, 10))}</p>
+        {hasContact && showContact && (
+          <div>
+            <h3 className={label}>
+              Contact{" "}
+              {preview && !profile.showContactPublic && <span className="font-normal normal-case tracking-normal text-muted/70">· hidden on your public page</span>}
+            </h3>
+            <div className="mt-2 grid gap-1 text-[15px]">
+              {contact.phone.trim() && (
+                <a href={`tel:${contact.phone.replace(/[^\d+]/g, "")}`} className="w-fit text-accent underline-offset-4 hover:underline">
+                  {contact.phone.trim()}
+                </a>
+              )}
+              {contact.email.trim() && <ContactValue value={contact.email.trim()} />}
+            </div>
+          </div>
         )}
+
+        {!preview && profile.updatedAt && <p className="text-xs text-muted">Updated {formatDate(profile.updatedAt.slice(0, 10))}</p>}
       </div>
     </article>
   );
@@ -157,7 +262,7 @@ function VideoLink({ href, label }: { href: string; label: string }) {
 function ContactValue({ value }: { value: string }) {
   if (/^\S+@\S+\.\S+$/.test(value)) {
     return (
-      <a href={`mailto:${value}`} className="break-all text-accent underline-offset-4 hover:underline">
+      <a href={`mailto:${value}`} className="w-fit break-all text-accent underline-offset-4 hover:underline">
         {value}
       </a>
     );

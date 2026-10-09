@@ -1,4 +1,5 @@
-import type { Profile } from "./store";
+import { SITE_URL } from "./site";
+import type { CareerEntry, Profile } from "./store";
 
 export const POSITIONS = ["GK", "RB", "CB", "LB", "RWB", "LWB", "DM", "CM", "AM", "RM", "LM", "RW", "LW", "CF", "ST"];
 
@@ -7,6 +8,17 @@ export const POSITION_NAMES: Record<string, string> = {
   LWB: "Left wing back", DM: "Defensive midfielder", CM: "Central midfielder", AM: "Attacking midfielder",
   RM: "Right midfielder", LM: "Left midfielder", RW: "Right winger", LW: "Left winger", CF: "Centre forward", ST: "Striker",
 };
+
+export const STRENGTHS = [
+  "Pace", "Work rate", "Passing range", "Vision", "Dribbling", "1v1 defending", "Aerial ability", "Finishing",
+  "Pressing", "Ball carrying", "Leadership", "Set pieces", "Crossing", "Positional sense", "Shot stopping", "Distribution",
+];
+
+export const TRAVEL_OPTIONS = ["Up to 25 miles", "Up to 50 miles", "Up to 100 miles", "Anywhere in the UK", "Willing to relocate", "Willing to move abroad"];
+
+export const MAX_STRENGTHS = 4;
+export const MAX_CAREER = 8;
+export const MAX_HONOURS = 8;
 
 export const LEVELS = [
   "Academy (Category 1-2)", "Academy (Category 3-4)", "National League (Step 1)", "National League North/South (Step 2)",
@@ -21,8 +33,9 @@ export function publicPath(profile: Profile): string {
   return `/player/${slugify(profile.name) || "player"}-${profile.id}`;
 }
 
+/** Shareable link on the live domain from lib/site.ts (never localhost): copied links, messages, CV and QR code. */
 export function publicUrl(profile: Profile): string {
-  return `${window.location.origin}${publicPath(profile)}`;
+  return `${SITE_URL}${publicPath(profile)}`;
 }
 
 /** "183 cm (6′0″)" */
@@ -37,8 +50,37 @@ export function positionLabel(profile: Profile): string {
   return profile.positions.join(" / ");
 }
 
-export function previousClubList(profile: Profile): string[] {
-  return profile.previousClubs.split("\n").map((s) => s.trim()).filter(Boolean);
+/** "72 kg (159 lb)" */
+export function formatWeight(kg: string): string {
+  const n = Number(kg);
+  if (!n || n < 30 || n > 150) return "";
+  return `${Math.round(n)} kg (${Math.round(n * 2.20462)} lb)`;
+}
+
+export type CareerRow = Omit<CareerEntry, "id"> & { key: string; current: boolean };
+
+/** Career history with the current club first (from the Club and season stats), then previous clubs. */
+export function careerRows(profile: Profile): CareerRow[] {
+  const rows: CareerRow[] = [];
+  if (profile.club.trim()) {
+    rows.push({
+      key: "current",
+      current: true,
+      club: profile.club.trim(),
+      seasons: profile.stats.season.trim(),
+      level: profile.level.trim(),
+      appearances: profile.stats.appearances,
+      goals: profile.stats.goals,
+    });
+  }
+  for (const c of profile.career) {
+    if (c.club.trim()) rows.push({ ...c, club: c.club.trim(), key: c.id, current: false });
+  }
+  return rows;
+}
+
+export function cleanList(items: string[]): string[] {
+  return items.map((i) => i.trim()).filter(Boolean);
 }
 
 export function statItems(profile: Profile) {
@@ -54,7 +96,10 @@ export function statItems(profile: Profile) {
   return items;
 }
 
-/** What a complete profile needs. Previous clubs, full match link and clean sheets are optional. */
+/**
+ * What a complete profile needs. Career history, honours, physical, availability, education,
+ * full match link and clean sheets are optional extras.
+ */
 export function profileChecklist(profile: Profile | null) {
   const p = profile;
   return [
@@ -69,6 +114,9 @@ export function profileChecklist(profile: Profile | null) {
     { label: "Highlight video", done: !!p?.highlightUrl.trim() },
     { label: "Coach reference", done: !!(p?.coach.name.trim() && p?.coach.contact.trim()) },
     { label: "Bio", done: !!p?.bio.trim() },
+    { label: "Contact details", done: !!(p?.contact.phone.trim() || p?.contact.email.trim()) },
+    { label: "Key strengths", done: !!p && cleanList(p.strengths).length > 0 },
+    { label: "What you're looking for", done: !!p?.lookingFor.trim() },
   ];
 }
 

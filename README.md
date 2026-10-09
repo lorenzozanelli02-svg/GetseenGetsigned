@@ -12,6 +12,7 @@ npm run build && npm start
 
 | What | File |
 | --- | --- |
+| Site domain for share links, messages, the CV link and QR code | `lib/site.ts` (`domain`) |
 | What every buy button does (swap in Stripe here) | `lib/checkout.ts` (`startCheckout`) |
 | All saved data, including the mock "unlocked" flag (swap in a database here) | `lib/store.ts` |
 | Guide chapters | `content/guide.ts` |
@@ -33,7 +34,7 @@ Buying unlocks `/dashboard` and four tools. Every dashboard page checks access f
 | Tool | Address | What it does |
 | --- | --- | --- |
 | Dashboard | `/dashboard` | Progress from each tool and the follow-ups due today or overdue |
-| Profile Builder | `/dashboard/profile` | Form with a live player card; autosaves. Makes the public page and a one-page PDF CV |
+| Profile Builder | `/dashboard/profile` | Form with a live player card; autosaves. Makes the public page and a one-page PDF CV with a QR code |
 | Message Builder | `/dashboard/messages` | Messages for non-league managers, trial requests and US college coaches, filled in from the profile |
 | Outreach Tracker | `/dashboard/tracker` | Clubs contacted, status and follow-ups. Table on desktop, cards on mobile |
 | Guide | `/dashboard/guide` | Chapters with previous/next and read ticks |
@@ -60,6 +61,16 @@ Until then:
 - Data stays in the browser it was entered in. A different browser or device starts empty.
 - A player's public link only opens in their own browser. Anyone else sees "Player not found".
 - Anyone can unlock the dashboard for free.
+
+## Football CV
+
+`components/CvDocument.tsx` lays out the one-page A4 CV and `lib/cv.tsx` builds it in the
+browser. Sections the player left empty are left out, and the CV is rendered at several
+sizes so the largest one that still fits on one page is kept. Full and sparse profiles both
+fill the page. The profile link and QR code use the domain in `lib/site.ts`.
+
+Phone and email are always on the CV. On the public player page they show only if the
+player leaves "Show my phone and email on my public page" ticked.
 
 ## Guide content
 

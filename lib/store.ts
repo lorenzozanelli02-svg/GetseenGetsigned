@@ -12,6 +12,16 @@
 
 export type Foot = "" | "Right" | "Left" | "Both";
 
+export type CareerEntry = {
+  id: string;
+  club: string;
+  /** e.g. "2023–25" */
+  seasons: string;
+  level: string;
+  appearances: string;
+  goals: string;
+};
+
 export type Profile = {
   /** Stable short id; the end of the public link, so links survive name changes. */
   id: string;
@@ -25,13 +35,24 @@ export type Profile = {
   heightCm: string;
   club: string;
   level: string;
-  /** One club per line. */
-  previousClubs: string;
   stats: { season: string; appearances: string; goals: string; assists: string; cleanSheets: string };
   highlightUrl: string;
   matchUrl: string;
   coach: { name: string; club: string; contact: string };
   bio: string;
+  contact: { phone: string; email: string; location: string; nationality: string };
+  /** Whether phone and email appear on the public player page. They are always on the CV. */
+  showContactPublic: boolean;
+  /** One line. */
+  lookingFor: string;
+  /** Up to 4 short tags. */
+  strengths: string[];
+  /** Previous clubs, most recent first. The current club is added automatically where shown. */
+  career: CareerEntry[];
+  honours: string[];
+  physical: { weightKg: string; sprint: string; fitness: string };
+  availability: { trials: string; travel: string };
+  education: { school: string; grades: string; graduationYear: string };
   updatedAt: string;
 };
 
@@ -137,20 +158,56 @@ export function emptyProfile(): Profile {
     heightCm: "",
     club: "",
     level: "",
-    previousClubs: "",
     stats: { season: "", appearances: "", goals: "", assists: "", cleanSheets: "" },
     highlightUrl: "",
     matchUrl: "",
     coach: { name: "", club: "", contact: "" },
     bio: "",
+    contact: { phone: "", email: "", location: "", nationality: "" },
+    showContactPublic: true,
+    lookingFor: "",
+    strengths: [],
+    career: [],
+    honours: [],
+    physical: { weightKg: "", sprint: "", fitness: "" },
+    availability: { trials: "", travel: "" },
+    education: { school: "", grades: "", graduationYear: "" },
     updatedAt: "",
   };
 }
 
+export function emptyCareerEntry(): CareerEntry {
+  return { id: newId(), club: "", seasons: "", level: "", appearances: "", goals: "" };
+}
+
 export async function getProfile(): Promise<Profile | null> {
-  const saved = read<Profile | null>(KEYS.profile, null);
+  const saved = read<(Partial<Profile> & { previousClubs?: string }) | null>(KEYS.profile, null);
+  if (!saved) return null;
   // Merge over an empty profile so older saves pick up fields added later.
-  return saved ? { ...emptyProfile(), ...saved, stats: { ...emptyProfile().stats, ...saved.stats }, coach: { ...emptyProfile().coach, ...saved.coach } } : null;
+  const base = emptyProfile();
+  const { previousClubs, ...rest } = saved;
+  const profile: Profile = {
+    ...base,
+    ...rest,
+    stats: { ...base.stats, ...saved.stats },
+    coach: { ...base.coach, ...saved.coach },
+    contact: { ...base.contact, ...saved.contact },
+    physical: { ...base.physical, ...saved.physical },
+    availability: { ...base.availability, ...saved.availability },
+    education: { ...base.education, ...saved.education },
+  };
+  // Older profiles kept previous clubs as text, one per line, e.g. "Norton United (2023–25)".
+  if (!saved.career && previousClubs) {
+    profile.career = previousClubs
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const m = line.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+        return { ...emptyCareerEntry(), club: m ? m[1] : line, seasons: m ? m[2] : "" };
+      });
+  }
+  return profile;
 }
 
 export async function saveProfile(profile: Profile): Promise<Profile> {

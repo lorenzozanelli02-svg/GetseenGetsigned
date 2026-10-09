@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ageFrom } from "@/lib/dates";
 import { resizeImage } from "@/lib/image";
-import { formatHeight, LEVELS, POSITION_NAMES, POSITIONS } from "@/lib/profile";
+import { formatHeight, formatWeight, LEVELS, MAX_CAREER, MAX_HONOURS, MAX_STRENGTHS, POSITION_NAMES, POSITIONS, STRENGTHS, TRAVEL_OPTIONS } from "@/lib/profile";
 import { emptyProfile, getProfile, saveProfile, type Foot, type Profile } from "@/lib/store";
 import { embedUrl, isLink } from "@/lib/video";
+import { CareerEditor, LineList, TagInput } from "./ListEditors";
 import { PlayerCard } from "./PlayerCard";
 import { ProfileActions } from "./ProfileActions";
 import { Field, inputClass, Loading, PageHeader, secondaryButton, Section } from "./ui";
 
 const MAX_POSITIONS = 3;
-const BIO_MAX = 600;
+const BIO_MAX = 500;
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -56,12 +57,17 @@ export function ProfileBuilder() {
 
   if (!profile) return <Loading />;
 
-  const text = (key: "name" | "dob" | "heightCm" | "club" | "level" | "previousClubs" | "highlightUrl" | "matchUrl" | "bio") =>
+  const text = (key: "name" | "dob" | "heightCm" | "club" | "level" | "highlightUrl" | "matchUrl" | "bio" | "lookingFor") =>
     ({ id: `profile-${key}`, value: profile[key], onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => update({ [key]: e.target.value }) });
   const stat = (key: keyof Profile["stats"]) =>
     ({ id: `profile-stat-${key}`, value: profile.stats[key], onChange: (e: React.ChangeEvent<HTMLInputElement>) => update({ stats: { ...profile.stats, [key]: e.target.value } }) });
   const coach = (key: keyof Profile["coach"]) =>
     ({ id: `profile-coach-${key}`, value: profile.coach[key], onChange: (e: React.ChangeEvent<HTMLInputElement>) => update({ coach: { ...profile.coach, [key]: e.target.value } }) });
+  /** Inputs for the grouped fields: contact, physical, availability, education. */
+  function group<G extends "contact" | "physical" | "availability" | "education">(g: G, key: keyof Profile[G] & string) {
+    const current = profile![g] as Record<string, string>;
+    return { id: `profile-${g}-${key}`, value: current[key], onChange: (e: React.ChangeEvent<HTMLInputElement>) => update({ [g]: { ...current, [key]: e.target.value } } as Partial<Profile>) };
+  }
 
   function togglePosition(pos: string) {
     if (!profile) return;
@@ -115,14 +121,9 @@ export function ProfileBuilder() {
               </div>
             </Field>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Date of birth" htmlFor="profile-dob" hint={age !== null ? `Age ${age}` : undefined}>
-                <input {...text("dob")} type="date" className={inputClass} max={new Date().toISOString().slice(0, 10)} />
-              </Field>
-              <Field label="Height (cm)" htmlFor="profile-heightCm" hint={height ? height.replace(/^\d+ cm /, "") : "e.g. 180"}>
-                <input {...text("heightCm")} type="number" inputMode="numeric" min={120} max={220} className={inputClass} placeholder="180" />
-              </Field>
-            </div>
+            <Field label="Date of birth" htmlFor="profile-dob" hint={age !== null ? `Age ${age}` : undefined}>
+              <input {...text("dob")} type="date" className={`${inputClass} sm:max-w-56`} max={new Date().toISOString().slice(0, 10)} />
+            </Field>
 
             <div className="flex flex-col gap-2">
               <span id="positions-label" className="text-sm font-medium text-ink/90">
@@ -169,6 +170,42 @@ export function ProfileBuilder() {
             </fieldset>
           </Section>
 
+          <Section title="What you're looking for">
+            <Field label="In one line" htmlFor="profile-lookingFor" hint="Shown near the top of your card and CV.">
+              <input {...text("lookingFor")} className={inputClass} maxLength={120} placeholder="e.g. A trial at Step 3 or above, or a US college scholarship for fall 2027" />
+            </Field>
+          </Section>
+
+          <Section title="Contact">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Phone" htmlFor="profile-contact-phone">
+                <input {...group("contact", "phone")} type="tel" autoComplete="tel" className={inputClass} maxLength={30} />
+              </Field>
+              <Field label="Email" htmlFor="profile-contact-email">
+                <input {...group("contact", "email")} type="email" autoComplete="email" className={inputClass} maxLength={80} />
+              </Field>
+              <Field label="Town or city" htmlFor="profile-contact-location">
+                <input {...group("contact", "location")} autoComplete="address-level2" className={inputClass} maxLength={40} placeholder="e.g. Leeds" />
+              </Field>
+              <Field label="Nationality" htmlFor="profile-contact-nationality">
+                <input {...group("contact", "nationality")} className={inputClass} maxLength={40} placeholder="e.g. English" />
+              </Field>
+            </div>
+            <label className="flex cursor-pointer items-start gap-3 text-sm text-ink/90">
+              <input
+                id="profile-showContactPublic"
+                type="checkbox"
+                checked={profile.showContactPublic}
+                onChange={(e) => update({ showContactPublic: e.target.checked })}
+                className="mt-0.5 size-4 accent-[var(--color-accent)]"
+              />
+              <span>
+                Show my phone and email on my public page
+                <span className="block text-xs text-muted">They&rsquo;re always on your CV. If you&rsquo;re under 18, ask a parent or guardian first.</span>
+              </span>
+            </label>
+          </Section>
+
           <Section title="Club">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Current club" htmlFor="profile-club">
@@ -183,9 +220,6 @@ export function ProfileBuilder() {
                 </datalist>
               </Field>
             </div>
-            <Field label="Previous clubs" htmlFor="profile-previousClubs" hint="One per line, most recent first. Add years if you like, e.g. Norton United (2023–25).">
-              <textarea {...text("previousClubs")} rows={3} className={inputClass} />
-            </Field>
           </Section>
 
           <Section title="This season">
@@ -204,6 +238,75 @@ export function ProfileBuilder() {
               </Field>
               <Field label="Clean sheets" htmlFor="profile-stat-cleanSheets">
                 <input {...stat("cleanSheets")} type="number" inputMode="numeric" min={0} className={inputClass} />
+              </Field>
+            </div>
+          </Section>
+
+          <Section title="Career history">
+            <p className="-mt-1 text-xs leading-relaxed text-muted">Your previous clubs, most recent first. Your current club and this season&rsquo;s numbers are added at the top automatically.</p>
+            <CareerEditor entries={profile.career} onChange={(career) => update({ career })} max={MAX_CAREER} />
+          </Section>
+
+          <Section title="Key strengths">
+            <Field label={`Up to ${MAX_STRENGTHS} short tags`} htmlFor="profile-strength-input">
+              <TagInput id="profile-strength-input" tags={profile.strengths} onChange={(strengths) => update({ strengths })} suggestions={STRENGTHS} max={MAX_STRENGTHS} />
+            </Field>
+          </Section>
+
+          <Section title="Honours and representative football">
+            <p className="-mt-1 text-xs leading-relaxed text-muted">County, district or school squads, academy spells and awards. One per line.</p>
+            <LineList
+              idPrefix="profile-honour"
+              items={profile.honours}
+              onChange={(honours) => update({ honours })}
+              max={MAX_HONOURS}
+              itemLabel="Honour"
+              addLabel="Add an honour"
+              placeholder="e.g. West Riding County FA U18 squad (2025)"
+            />
+          </Section>
+
+          <Section title="Physical">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Height (cm)" htmlFor="profile-heightCm" hint={height ? height.replace(/^\d+ cm /, "") : "e.g. 180"}>
+                <input {...text("heightCm")} type="number" inputMode="numeric" min={120} max={220} className={inputClass} placeholder="180" />
+              </Field>
+              <Field label="Weight (kg)" htmlFor="profile-physical-weightKg" hint={formatWeight(profile.physical.weightKg).replace(/^\d+ kg /, "") || "e.g. 72"}>
+                <input {...group("physical", "weightKg")} type="number" inputMode="numeric" min={30} max={150} className={inputClass} placeholder="72" />
+              </Field>
+              <Field label="Sprint time (optional)" htmlFor="profile-physical-sprint">
+                <input {...group("physical", "sprint")} className={inputClass} maxLength={30} placeholder="e.g. 30 m in 4.1 s" />
+              </Field>
+              <Field label="Fitness test (optional)" htmlFor="profile-physical-fitness">
+                <input {...group("physical", "fitness")} className={inputClass} maxLength={40} placeholder="e.g. Bleep test level 13.4" />
+              </Field>
+            </div>
+          </Section>
+
+          <Section title="Availability">
+            <Field label="When you can trial" htmlFor="profile-availability-trials">
+              <input {...group("availability", "trials")} className={inputClass} maxLength={80} placeholder="e.g. Weekends and Tuesday evenings, from November" />
+            </Field>
+            <Field label="How far you can travel" htmlFor="profile-availability-travel" hint="Pick one or type your own.">
+              <input {...group("availability", "travel")} list="travel-options" className={inputClass} maxLength={60} placeholder="e.g. Up to 50 miles" />
+              <datalist id="travel-options">
+                {TRAVEL_OPTIONS.map((t) => (
+                  <option key={t} value={t} />
+                ))}
+              </datalist>
+            </Field>
+          </Section>
+
+          <Section title="Education">
+            <Field label="School or college" htmlFor="profile-education-school">
+              <input {...group("education", "school")} className={inputClass} maxLength={60} />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
+              <Field label="Grades" htmlFor="profile-education-grades" hint="GCSEs, A levels, BTEC, or GPA for US colleges.">
+                <input {...group("education", "grades")} className={inputClass} maxLength={90} />
+              </Field>
+              <Field label="Graduation year" htmlFor="profile-education-graduationYear">
+                <input {...group("education", "graduationYear")} type="number" inputMode="numeric" min={2015} max={2040} className={inputClass} placeholder="2026" />
               </Field>
             </div>
           </Section>
