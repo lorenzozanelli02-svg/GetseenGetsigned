@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/*
+  Colour tokens. The accent is sampled from the neon floodlight glow in the
+  photography (hue ~145deg); the background matches the darkest areas of the
+  images so their faded edges disappear into the page.
+*/
+@theme {
+  --color-bg: #050807;
+  --color-surface: #0a100d;
+  --color-line: #1a2621;
+  --color-ink: #f1f5f2;
+  --color-muted: #9aa8a0;
+  --color-accent: #3be584;
+  --color-accent-hover: #6cf0a5;
+  --color-on-accent: #03130a;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-barlow), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  background: var(--color-bg);
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
