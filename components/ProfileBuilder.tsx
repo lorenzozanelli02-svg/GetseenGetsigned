@@ -25,6 +25,7 @@ import {
 } from "@/lib/profile";
 import { emptyProfile, getProfile, saveProfile, type Foot, type Profile } from "@/lib/store";
 import { isLink } from "@/lib/video";
+import { writeProfile } from "@/lib/writeProfile";
 import { CareerEditor, LineList } from "./ListEditors";
 import { PlayerCard } from "./PlayerCard";
 import { ProfileActions } from "./ProfileActions";
@@ -537,6 +538,14 @@ function Overview({
           <p className="mt-2 text-[15px] leading-relaxed text-muted">Share your page with clubs or download your CV. You can change anything at any time.</p>
         </div>
         <ProfileActions profile={profile} showViewLink beforeAction={flush} />
+      </section>
+
+      <section className={`${card} p-5 sm:p-6`} aria-labelledby="cv-profile-title">
+        <h3 id="cv-profile-title" className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
+          Your CV profile
+        </h3>
+        <p className="mt-2.5 text-[15px] leading-relaxed text-ink/90">{writeProfile(profile)}</p>
+        <p className="mt-2.5 text-xs leading-relaxed text-muted">Written for you from your answers and printed at the top of your CV. Change an answer and it updates.</p>
       </section>
 
       <ol className={`${card} divide-y divide-line`} aria-label="Your answers">

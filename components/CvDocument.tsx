@@ -3,6 +3,7 @@ import { ageFrom, formatDate } from "@/lib/dates";
 import { careerRows, cleanList, formatHeight, PITCH_SPOTS, POSITION_NAMES, statItems, type CareerRow } from "@/lib/profile";
 import { SITE } from "@/lib/site";
 import type { Profile } from "@/lib/store";
+import { writeProfile } from "@/lib/writeProfile";
 
 /*
  * One-page A4 football CV, rendered in the browser with @react-pdf/renderer.
@@ -76,6 +77,7 @@ function makeStyles(scale: number) {
     metaLabel: { fontSize: 6.5 * t, color: C.bandMuted, textTransform: "uppercase", letterSpacing: 1 },
     metaValue: { fontSize: 9.5 * t, color: "#ffffff", fontWeight: 600, marginTop: 2 },
 
+    summary: { paddingHorizontal: PAGE_PAD, paddingTop: 16 * b },
     stats: { paddingHorizontal: PAGE_PAD, paddingTop: 16 * b },
     statsLabel: { fontSize: 7.5 * t, fontWeight: 700, color: C.green, letterSpacing: 1.3, textTransform: "uppercase", marginBottom: 6 * b },
     statRow: { flexDirection: "row", gap: 8 },
@@ -134,8 +136,8 @@ const fit = (text: string, max: number) => (text.length > max ? `${text.slice(0,
 /** Rough number of characters that fit across `width` points of Inter at `size`. */
 const charsFor = (width: number, size: number) => Math.floor(width / (size * 0.56));
 
-type SectionId = "pitch" | "profile" | "strengths" | "career" | "honours" | "details" | "video" | "coach" | "college" | "online";
-const LEFT: SectionId[] = ["pitch", "profile", "strengths", "career", "honours"];
+type SectionId = "pitch" | "strengths" | "career" | "honours" | "details" | "video" | "coach" | "college" | "online";
+const LEFT: SectionId[] = ["pitch", "strengths", "career", "honours"];
 const RIGHT: SectionId[] = ["details", "video", "coach", "college"];
 const INNER = 595.28 - PAGE_PAD * 2 - COL_GAP;
 const LEFT_W = (INNER * LEFT_FLEX) / (LEFT_FLEX + 1);
@@ -166,7 +168,6 @@ function estimateHeight(id: SectionId, p: Profile, width: number): number {
   const lines = (text: string, size: number, w: number) => Math.max(1, Math.ceil((text.length * size * 0.52) / w));
   const title = 22;
   switch (id) {
-    case "profile": return title + lines(p.bio, 10.5, width) * 15.8;
     case "strengths": return title + Math.ceil(cleanList(p.strengths).reduce((n, s) => n + s.length * 5 + 24, 0) / width) * 21;
     case "career": return title + 15 + careerRows(p).length * 19;
     case "honours": return title + cleanList(p.honours).reduce((n, h) => n + lines(h, 10, width - 11) * 14 + 4, 0);
@@ -183,7 +184,6 @@ function estimateHeight(id: SectionId, p: Profile, width: number): number {
 export function planColumns(p: Profile): { left: SectionId[]; right: SectionId[] } {
   const has: Record<SectionId, boolean> = {
     pitch: p.positions.some((pos) => PITCH_SPOTS[pos]),
-    profile: !!p.bio.trim(),
     strengths: cleanList(p.strengths).length > 0,
     // The current club is in the header, so the table only appears once there are previous clubs.
     career: careerRows(p).length > 1,
@@ -236,6 +236,7 @@ export function CvDocument({ profile: p, profileUrl, qr, scale = 1 }: { profile:
   const hasStats = stats.some((st) => st.value);
   const initials = p.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const { left, right } = planColumns(p);
+  const summary = writeProfile(p);
   const render = (width: number) => (id: SectionId) => <CvSection key={id} id={id} p={p} s={s} profileUrl={profileUrl} qr={qr} scale={scale} width={width} />;
 
   return (
@@ -270,6 +271,14 @@ export function CvDocument({ profile: p, profileUrl, qr, scale = 1 }: { profile:
             )}
           </View>
         </View>
+
+        {/* The written profile sits first, full width, the way a CV opens with a personal statement. */}
+        {summary && (
+          <View style={s.summary}>
+            <Title s={s}>Profile</Title>
+            <Text style={s.para}>{summary}</Text>
+          </View>
+        )}
 
         {hasStats && (
           <View style={s.stats}>
@@ -332,13 +341,6 @@ function Rows({ rows, s }: { rows: [string, string][]; s: S }) {
 function CvSection({ id, p, s, profileUrl, qr, scale, width }: { id: SectionId; p: Profile; s: S; profileUrl: string; qr: string; scale: number; width: number }) {
   const linkChars = charsFor(width, (s.line.fontSize as number) ?? 10);
   switch (id) {
-    case "profile":
-      return (
-        <View style={s.section}>
-          <Title s={s}>Profile</Title>
-          <Text style={s.para}>{p.bio.trim()}</Text>
-        </View>
-      );
     case "strengths":
       return (
         <View style={s.section}>
