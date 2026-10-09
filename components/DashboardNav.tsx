@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 const ITEMS = [
   { href: "/dashboard", label: "Overview" },
@@ -13,9 +14,22 @@ const ITEMS = [
 
 export function DashboardNav() {
   const path = usePathname();
+  const scroller = useRef<HTMLElement>(null);
+
+  // On narrow screens the row scrolls sideways; bring the current tool into view.
+  useEffect(() => {
+    const box = scroller.current;
+    const active = box?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (box && active) box.scrollLeft = active.offsetLeft - (box.clientWidth - active.clientWidth) / 2;
+  }, [path]);
+
   return (
-    <nav aria-label="Dashboard" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-      <ul className="flex min-w-max gap-1">
+    <nav
+      ref={scroller}
+      aria-label="Dashboard"
+      className="-mx-4 overflow-x-auto px-4 [mask-image:linear-gradient(to_right,black_85%,transparent)] sm:mx-0 sm:px-0 sm:[mask-image:none]"
+    >
+      <ul className="flex min-w-max gap-1 pr-6 sm:pr-0">
         {ITEMS.map((item) => {
           const active = item.href === "/dashboard" ? path === item.href : path.startsWith(item.href);
           return (
