@@ -1,5 +1,6 @@
 import { BuyButton } from "./BuyButton";
 import { Eyebrow } from "./Eyebrow";
+import { Reveal } from "./Reveal";
 
 const ITEMS = [
   { title: "The Get Seen playbook", text: "How scouting works at every level, and exactly where you fit in." },
@@ -12,43 +13,41 @@ const ITEMS = [
 
 export function Included() {
   return (
-    <section id="included" aria-labelledby="included-title" className="scroll-mt-8 px-4 pb-24 sm:px-6 sm:pb-32 lg:px-8">
+    <Reveal as="section" id="included" aria-labelledby="included-title" className="scroll-mt-20 px-4 py-24 sm:px-6 sm:py-32 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <div className="max-w-2xl">
-          <Eyebrow>What&rsquo;s included</Eyebrow>
-          <h2 id="included-title" className="mt-4 font-display text-4xl leading-[0.95] font-extrabold uppercase text-balance sm:text-5xl lg:text-6xl">
-            Everything you need to <span className="text-accent">get signed</span>
+          <div data-reveal="up">
+            <Eyebrow>What&rsquo;s included</Eyebrow>
+          </div>
+          <h2 id="included-title" data-reveal="split" className="mt-4 font-display text-5xl leading-[0.92] font-extrabold uppercase sm:text-6xl lg:text-7xl">
+            Everything you need to <span className="text-accent [text-shadow:0_0_28px_rgb(59_229_132/0.45)]">get signed</span>
           </h2>
         </div>
 
-        <ul className="mt-10 grid gap-x-10 gap-y-7 sm:grid-cols-2">
-          {ITEMS.map((item) => (
-            <li key={item.title} className="flex gap-4">
-              <span aria-hidden="true" className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-accent/12 text-accent ring-1 ring-accent/30">
-                <svg viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.4">
-                  <path d="M5 10.5l3.2 3L15 7" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-              <div>
-                <h3 className="font-semibold">{item.title}</h3>
-                <p className="mt-1 text-[15px] leading-relaxed text-muted">{item.text}</p>
-              </div>
+        <ul data-reveal="stagger" className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {ITEMS.map((item, i) => (
+            <li
+              key={item.title}
+              className="group relative overflow-hidden rounded-2xl border border-line bg-surface p-6 transition-[border-color,transform] duration-300 hover:-translate-y-1 hover:border-accent/60"
+            >
+              <span aria-hidden="true" className="pointer-events-none absolute -top-16 -right-16 size-40 rounded-full bg-accent/0 blur-3xl transition-colors duration-500 group-hover:bg-accent/20" />
+              <span className="font-display text-sm font-extrabold tracking-[0.2em] text-accent">{String(i + 1).padStart(2, "0")}</span>
+              <h3 className="mt-3 text-lg font-semibold">{item.title}</h3>
+              <p className="mt-1.5 text-[15px] leading-relaxed text-muted">{item.text}</p>
             </li>
           ))}
         </ul>
 
-        <div
-          className="mt-16 rounded-3xl border border-accent/25 bg-[radial-gradient(120%_140%_at_50%_0%,rgb(59_229_132/0.14),transparent_60%)] px-6 py-12 text-center sm:px-12 sm:py-16"
-        >
-          <h2 className="font-display text-4xl leading-[0.95] font-extrabold uppercase text-balance sm:text-5xl">
-            Ready to <span className="text-accent">get seen?</span>
-          </h2>
-          <p className="mx-auto mt-4 max-w-md text-base leading-relaxed text-ink/80 sm:text-lg">
-            Put yourself in front of the people who make the decisions.
-          </p>
-          <BuyButton className="mt-8" />
+        <div data-reveal="up" className="border-spin mt-16 rounded-3xl p-px">
+          <div className="rounded-[calc(1.5rem-1px)] bg-bg bg-[radial-gradient(120%_140%_at_50%_0%,rgb(59_229_132/0.16),transparent_60%)] px-6 py-14 text-center sm:px-12 sm:py-20">
+            <h2 className="font-display text-5xl leading-[0.92] font-extrabold uppercase text-balance sm:text-6xl">
+              Ready to <span className="neon-text">get seen?</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-md text-base leading-relaxed text-ink/80 sm:text-lg">Put yourself in front of the people who make the decisions.</p>
+            <BuyButton className="mt-8" />
+          </div>
         </div>
       </div>
-    </section>
+    </Reveal>
   );
 }

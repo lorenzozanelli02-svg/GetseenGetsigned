@@ -50,3 +50,148 @@ body {
     scroll-behavior: auto;
   }
 }
+
+/* ---------- Motion ---------- */
+/* Everything below is decorative; prefers-reduced-motion turns it all off. */
+
+@property --spin-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes rise {
+  from { transform: translateY(110%) rotate(6deg); }
+  to { transform: translateY(0) rotate(0); }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* A floodlight flickering on, then holding. */
+@keyframes flicker {
+  0%, 8% { opacity: 0.15; text-shadow: none; }
+  9%, 14% { opacity: 1; }
+  15%, 22% { opacity: 0.3; text-shadow: none; }
+  23%, 30% { opacity: 1; }
+  31%, 34% { opacity: 0.5; }
+  35%, 100% { opacity: 1; }
+}
+@keyframes neon {
+  0%, 100% { text-shadow: 0 0 18px rgb(59 229 132 / 0.45), 0 0 48px rgb(59 229 132 / 0.2); }
+  50% { text-shadow: 0 0 26px rgb(59 229 132 / 0.7), 0 0 72px rgb(59 229 132 / 0.35); }
+}
+@keyframes badge-in {
+  0% { opacity: 0; transform: scale(0.72); filter: blur(14px) brightness(2.2); }
+  55% { opacity: 1; filter: blur(0) brightness(1.5); }
+  100% { opacity: 1; transform: scale(1); filter: none; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-14px) rotate(1deg); }
+}
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.96); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spark {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx, 0), -140px) scale(0.2); }
+}
+@keyframes grid-run { to { background-position: 0 64px, 64px 0; } }
+@keyframes marquee { to { transform: translateX(-50%); } }
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(4%, 6%); }
+}
+@keyframes shine {
+  0%, 70% { transform: translateX(-120%) skewX(-20deg); }
+  100% { transform: translateX(220%) skewX(-20deg); }
+}
+@keyframes border-spin { to { --spin-angle: 360deg; } }
+@keyframes ping-dot {
+  75%, 100% { transform: scale(2.4); opacity: 0; }
+}
+
+@utility anim-rise {
+  display: inline-block;
+  animation: rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+@utility anim-fade-up {
+  animation: fade-up 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+@utility neon-text {
+  color: var(--color-accent);
+  animation: flicker 1.3s linear both, neon 3.2s ease-in-out infinite;
+  animation-delay: var(--d, 0ms), calc(var(--d, 0ms) + 1.3s);
+}
+@utility anim-badge {
+  animation: badge-in 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+@utility anim-float {
+  animation: float 6s ease-in-out infinite;
+}
+@utility anim-glow {
+  animation: glow-pulse 3.2s ease-in-out infinite;
+}
+@utility anim-spin-slow {
+  animation: spin 40s linear infinite;
+}
+@utility anim-spark {
+  animation: spark var(--t, 3.2s) ease-out infinite;
+  animation-delay: var(--d, 0ms);
+}
+@utility anim-grid {
+  background-image:
+    linear-gradient(rgb(59 229 132 / 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(59 229 132 / 0.22) 1px, transparent 1px);
+  background-size: 64px 64px;
+  animation: grid-run 2.4s linear infinite;
+}
+@utility anim-marquee {
+  animation: marquee var(--t, 28s) linear infinite;
+}
+@utility anim-drift {
+  animation: drift var(--t, 14s) ease-in-out infinite;
+}
+@utility anim-ping {
+  animation: ping-dot 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Shine sweep across buy buttons. */
+@utility btn-shine {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+    animation: shine 3.6s ease-in-out infinite;
+    z-index: -1;
+    pointer-events: none;
+  }
+}
+
+/* Rotating gradient border: put on a wrapper with 1px padding around the card. */
+@utility border-spin {
+  background: conic-gradient(from var(--spin-angle), rgb(59 229 132 / 0.1), var(--color-accent), rgb(59 229 132 / 0.1) 40%, rgb(59 229 132 / 0.1));
+  animation: border-spin 6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+  }
+}

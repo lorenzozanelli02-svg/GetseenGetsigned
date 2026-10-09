@@ -20,11 +20,29 @@ npm run build && npm start
 | Dashboard and tools | `app/dashboard/**`, `components/` |
 | Public player page | `app/player/[slug]/page.tsx` |
 | Colours (accent green, near-black background) | `app/globals.css` (`@theme`) |
-| Wordmark | `components/Logo.tsx` |
-| Sections and copy | `components/Hero.tsx`, `Problem.tsx`, `HowItWorks.tsx`, `Included.tsx` |
-| Images | `public/images/hero.jpg`, `problem.jpg`, `scout.jpg` |
+| Logo (round badge plus wordmark) | `components/Logo.tsx`, `public/images/badge-mark.jpg`; tab icon `app/icon.png` |
+| Front page sections and copy | `components/Hero.tsx`, `Marquee.tsx`, `Problem.tsx`, `HowItWorks.tsx`, `Journey.tsx`, `Included.tsx` |
+| "Your road to signed" milestones | `components/Journey.tsx` (`STEPS`) |
+| Animations | keyframes and utilities at the end of `app/globals.css`; scroll reveals in `components/Reveal.tsx` |
+| Images | `public/images/badge.jpg` (front page), `hero.jpg`, `problem.jpg`, `scout.jpg` |
 
 All copy is placeholder.
+
+## Components and animation
+
+Reusable UI lives in `components/ui/`, the folder shadcn/ui uses, so components copied from
+shadcn, 21st.dev and similar libraries drop in with their usual `@/components/ui/...` imports.
+`components/ui/index.tsx` holds the shared form styles; `components/ui/timeline.tsx` is the
+pinned horizontal-scroll timeline (GSAP ScrollTrigger and SplitText), adapted to take its
+milestones as props.
+
+shadcn itself is not initialised (there is no `components.json`). Nothing here needs it. If
+you later want the shadcn CLI, run `npx shadcn@latest init`, and check what it changes in
+`app/globals.css` so its theme variables don't override the site's colours.
+
+The front page animations are CSS (hero intro, badge, ticker, buttons) plus GSAP for scroll
+reveals and the timeline. All of them are switched off for visitors whose device asks for
+reduced motion; the content then simply shows in place.
 
 ## Members area
 
