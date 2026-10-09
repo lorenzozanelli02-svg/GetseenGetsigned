@@ -1,5 +1,5 @@
 import { ageFrom, formatDate } from "@/lib/dates";
-import { careerRows, cleanList, formatHeight, formatWeight, POSITION_NAMES, statItems } from "@/lib/profile";
+import { careerRows, cleanList, formatHeight, POSITION_NAMES, statItems } from "@/lib/profile";
 import type { Profile } from "@/lib/store";
 import { embedUrl, isLink } from "@/lib/video";
 
@@ -12,7 +12,6 @@ const label = "text-xs font-semibold uppercase tracking-[0.18em] text-muted";
 export function PlayerCard({ profile, preview = false }: { profile: Profile; preview?: boolean }) {
   const age = ageFrom(profile.dob);
   const height = formatHeight(profile.heightCm);
-  const weight = formatWeight(profile.physical.weightKg);
   const video = embedUrl(profile.highlightUrl);
   const stats = statItems(profile);
   const hasStats = stats.some((s) => s.value);
@@ -20,30 +19,16 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
   const strengths = cleanList(profile.strengths);
   const honours = cleanList(profile.honours);
   const club = [profile.club.trim(), profile.level.trim()].filter(Boolean).join(" · ");
-  const { coach, contact, physical, availability, education } = profile;
+  const { coach, contact, college } = profile;
   const positions = profile.positions.map((p) => POSITION_NAMES[p] ?? p).join(" / ");
   const showContact = preview || profile.showContactPublic;
   const hasContact = !!(contact.phone.trim() || contact.email.trim());
 
-  const physicalRows = [
-    ["Weight", weight],
-    ["Sprint", physical.sprint.trim()],
-    ["Fitness test", physical.fitness.trim()],
-  ];
-  const availabilityRows = [
-    ["Trials", availability.trials.trim()],
-    ["Travel", availability.travel.trim()],
-  ];
-  const educationRows = [
-    ["School or college", education.school.trim()],
-    ["Grades", education.grades.trim()],
-    ["Graduating", education.graduationYear.trim()],
-  ];
-  const detailGroups = [
-    { title: "Physical", rows: physicalRows },
-    { title: "Availability", rows: availabilityRows },
-    { title: "Education", rows: educationRows },
-  ].filter((g) => g.rows.some(([, v]) => v));
+  const collegeRows = [
+    ["Graduating", college.graduationYear.trim() && `Class of ${college.graduationYear.trim()}`],
+    ["GPA", college.gpa.trim()],
+    ["Intended major", college.major.trim()],
+  ].filter(([, v]) => v);
 
   return (
     <article className="@container overflow-hidden rounded-3xl border border-line bg-surface shadow-[0_0_80px_-40px_var(--color-accent)]">
@@ -70,16 +55,9 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
             <Meta label="Age" value={age !== null ? String(age) : ""} preview={preview} />
             <Meta label="Foot" value={profile.foot} preview={preview} />
             <Meta label="Height" value={height} preview={preview} wide />
-            <Meta label="Based in" value={contact.location.trim()} preview={false} />
-            <Meta label="Nationality" value={contact.nationality.trim()} preview={false} />
+            <Meta label="Based in" value={contact.location.trim()} preview={false} wide />
           </dl>
         </div>
-        {profile.lookingFor.trim() && (
-          <div className="rounded-xl border-l-2 border-accent bg-accent/8 px-4 py-3 @md:col-span-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">Looking for</p>
-            <p className="mt-1 text-[15px] font-medium">{profile.lookingFor.trim()}</p>
-          </div>
-        )}
       </div>
 
       {(hasStats || preview) && (
@@ -136,7 +114,8 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
           </div>
         )}
 
-        {career.length > 0 && (
+        {/* The current club is already at the top, so the list only appears once there are previous clubs. */}
+        {career.length > 1 && (
           <div>
             <h3 className={label}>Career history</h3>
             <ul className="mt-2 divide-y divide-line">
@@ -147,14 +126,9 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
                       {c.club}
                       {c.current && <span className="ml-2 rounded-full bg-accent/12 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wider text-accent">Current</span>}
                     </p>
-                    <p className="text-sm text-muted">{[c.seasons, c.level].filter(Boolean).join(" · ")}</p>
+                    {c.level && <p className="text-sm text-muted">{c.level}</p>}
                   </div>
-                  {(c.appearances || c.goals) && (
-                    <p className="shrink-0 text-right text-sm tabular-nums">
-                      {c.appearances && <span className="block">{c.appearances} apps</span>}
-                      {c.goals && <span className="block text-muted">{c.goals} goals</span>}
-                    </p>
-                  )}
+                  {c.years && <p className="shrink-0 text-right text-sm text-muted tabular-nums">{c.years}</p>}
                 </li>
               ))}
             </ul>
@@ -163,7 +137,7 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
 
         {honours.length > 0 && (
           <div>
-            <h3 className={label}>Honours and representative football</h3>
+            <h3 className={label}>Honours</h3>
             <ul className="mt-2.5 grid gap-1.5 text-[15px]">
               {honours.map((h) => (
                 <li key={h} className="flex gap-3">
@@ -175,23 +149,17 @@ export function PlayerCard({ profile, preview = false }: { profile: Profile; pre
           </div>
         )}
 
-        {detailGroups.length > 0 && (
-          <div className="grid gap-6 @md:grid-cols-2">
-            {detailGroups.map((g) => (
-              <div key={g.title}>
-                <h3 className={label}>{g.title}</h3>
-                <dl className="mt-2 grid gap-1.5 text-[15px]">
-                  {g.rows
-                    .filter(([, v]) => v)
-                    .map(([k, v]) => (
-                      <div key={k} className="flex flex-wrap gap-x-2">
-                        <dt className="text-muted">{k}:</dt>
-                        <dd className="min-w-0 break-words">{v}</dd>
-                      </div>
-                    ))}
-                </dl>
-              </div>
-            ))}
+        {collegeRows.length > 0 && (
+          <div>
+            <h3 className={label}>US college</h3>
+            <dl className="mt-2 grid gap-1.5 text-[15px]">
+              {collegeRows.map(([k, v]) => (
+                <div key={k} className="flex flex-wrap gap-x-2">
+                  <dt className="text-muted">{k}:</dt>
+                  <dd className="min-w-0 break-words">{v}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         )}
 

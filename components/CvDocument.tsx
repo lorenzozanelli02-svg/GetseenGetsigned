@@ -1,6 +1,6 @@
-import { Document, Font, Image, Link, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Circle, Document, Font, Image, Line, Link, Page, Path, Rect, StyleSheet, Svg, Text, View } from "@react-pdf/renderer";
 import { ageFrom, formatDate } from "@/lib/dates";
-import { careerRows, cleanList, formatHeight, formatWeight, POSITION_NAMES, type CareerRow } from "@/lib/profile";
+import { careerRows, cleanList, formatHeight, PITCH_SPOTS, POSITION_NAMES, statItems, type CareerRow } from "@/lib/profile";
 import { SITE } from "@/lib/site";
 import type { Profile } from "@/lib/store";
 
@@ -76,10 +76,6 @@ function makeStyles(scale: number) {
     metaLabel: { fontSize: 6.5 * t, color: C.bandMuted, textTransform: "uppercase", letterSpacing: 1 },
     metaValue: { fontSize: 9.5 * t, color: "#ffffff", fontWeight: 600, marginTop: 2 },
 
-    looking: { backgroundColor: C.tint, paddingHorizontal: PAGE_PAD, paddingVertical: 9 * b, flexDirection: "row", alignItems: "center", gap: 12 },
-    lookingLabel: { fontSize: 7 * t, fontWeight: 700, color: C.green, letterSpacing: 1.3, textTransform: "uppercase" },
-    lookingText: { flex: 1, fontSize: 10.5 * t, fontWeight: 600, color: C.ink, lineHeight: 1.35 },
-
     stats: { paddingHorizontal: PAGE_PAD, paddingTop: 16 * b },
     statsLabel: { fontSize: 7.5 * t, fontWeight: 700, color: C.green, letterSpacing: 1.3, textTransform: "uppercase", marginBottom: 6 * b },
     statRow: { flexDirection: "row", gap: 8 },
@@ -117,6 +113,16 @@ function makeStyles(scale: number) {
     linkLabel: { fontSize: 7.5 * t, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 1 },
     linkBlock: { marginBottom: 6 * b },
 
+    pitchRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+    marker: { position: "absolute", alignItems: "center", justifyContent: "center", borderRadius: 20, borderWidth: 1.2, borderColor: C.green },
+    markerText: { fontWeight: 700, letterSpacing: 0.3 },
+    legend: { flex: 1, paddingTop: 2 },
+    legendRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 * b },
+    legendDot: { width: 13 * t, height: 13 * t, borderRadius: 7 * t, borderWidth: 1, borderColor: C.green, alignItems: "center", justifyContent: "center" },
+    legendNum: { fontSize: 7 * t, fontWeight: 700 },
+    legendText: { flex: 1, fontSize: 9.5 * t, lineHeight: 1.3 },
+    legendMain: { fontSize: 6 * t, fontWeight: 700, color: C.green, letterSpacing: 0.8 },
+
     footer: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: PAGE_PAD, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.line, fontSize: 7.5, color: C.muted },
   });
 }
@@ -127,11 +133,33 @@ const short = (url: string) => url.replace(/^https?:\/\/(www\.)?/, "").replace(/
 const fit = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 /** Rough number of characters that fit across `width` points of Inter at `size`. */
 const charsFor = (width: number, size: number) => Math.floor(width / (size * 0.56));
-const NARROW_COL = (595.28 - PAGE_PAD * 2 - COL_GAP) / (LEFT_FLEX + 1);
 
-type SectionId = "profile" | "strengths" | "career" | "honours" | "physical" | "availability" | "education" | "video" | "coach" | "online";
-const LEFT: SectionId[] = ["profile", "strengths", "career", "honours"];
-const RIGHT: SectionId[] = ["physical", "availability", "education", "video", "coach"];
+type SectionId = "pitch" | "profile" | "strengths" | "career" | "honours" | "details" | "video" | "coach" | "college" | "online";
+const LEFT: SectionId[] = ["pitch", "profile", "strengths", "career", "honours"];
+const RIGHT: SectionId[] = ["details", "video", "coach", "college"];
+const INNER = 595.28 - PAGE_PAD * 2 - COL_GAP;
+const LEFT_W = (INNER * LEFT_FLEX) / (LEFT_FLEX + 1);
+const RIGHT_W = INNER - LEFT_W;
+
+/** Height, foot and date of birth, for the Player details section. */
+function detailRows(p: Profile): [string, string][] {
+  return [
+    ["Height", formatHeight(p.heightCm)],
+    ["Preferred foot", p.foot],
+    ["Date of birth", p.dob ? formatDate(p.dob) : ""],
+  ].filter(([, v]) => v) as [string, string][];
+}
+
+function collegeRows(p: Profile): [string, string][] {
+  return [
+    ["Graduating", p.college.graduationYear.trim() && `Class of ${p.college.graduationYear.trim()}`],
+    ["GPA", p.college.gpa.trim()],
+    ["Intended major", p.college.major.trim()],
+  ].filter(([, v]) => v) as [string, string][];
+}
+
+/** The pitch grows with the scale, so a sparse CV gets a big pitch, but never wider than 62% of its column. */
+const pitchWidth = (b: number, colWidth: number) => Math.min(96 * b, colWidth * 0.62);
 
 /** Rough height (pt at scale 1) of a section, only used to balance the two columns. */
 function estimateHeight(id: SectionId, p: Profile, width: number): number {
@@ -142,34 +170,34 @@ function estimateHeight(id: SectionId, p: Profile, width: number): number {
     case "strengths": return title + Math.ceil(cleanList(p.strengths).reduce((n, s) => n + s.length * 5 + 24, 0) / width) * 21;
     case "career": return title + 15 + careerRows(p).length * 19;
     case "honours": return title + cleanList(p.honours).reduce((n, h) => n + lines(h, 10, width - 11) * 14 + 4, 0);
-    case "physical": return title + [formatHeight(p.heightCm), formatWeight(p.physical.weightKg), p.foot, p.physical.sprint.trim(), p.physical.fitness.trim()].filter(Boolean).length * 17;
-    case "availability": return title + [p.availability.trials, p.availability.travel].filter(Boolean).reduce((n, v) => n + lines(v, 9.5, width * 0.62) * 14 + 4, 0);
-    case "education": return title + [p.education.school, p.education.grades, p.education.graduationYear].filter(Boolean).reduce((n, v) => n + lines(v, 9.5, width * 0.62) * 14 + 4, 0);
+    case "pitch": return title + (pitchWidth(1, width) * 90) / 68;
+    case "details": return title + detailRows(p).length * 17;
+    case "college": return title + collegeRows(p).reduce((n, [, v]) => n + lines(v, 9.5, width * 0.62) * 14 + 4, 0);
     case "video": return title + [p.highlightUrl.trim(), p.matchUrl.trim()].filter(Boolean).length * 26;
     case "coach": return title + [p.coach.name, p.coach.club, p.coach.contact].filter((x) => x.trim()).length * 15;
-    case "online": return title + 60;
+    case "online": return title + 78;
   }
 }
 
 /** Which sections have content, split into the two columns; a very short column takes sections from the other. */
 export function planColumns(p: Profile): { left: SectionId[]; right: SectionId[] } {
   const has: Record<SectionId, boolean> = {
+    pitch: p.positions.some((pos) => PITCH_SPOTS[pos]),
     profile: !!p.bio.trim(),
     strengths: cleanList(p.strengths).length > 0,
-    career: careerRows(p).length > 0,
+    // The current club is in the header, so the table only appears once there are previous clubs.
+    career: careerRows(p).length > 1,
     honours: cleanList(p.honours).length > 0,
-    physical: !!(formatHeight(p.heightCm) || formatWeight(p.physical.weightKg) || p.foot || p.physical.sprint.trim() || p.physical.fitness.trim()),
-    availability: !!(p.availability.trials.trim() || p.availability.travel.trim()),
-    education: !!(p.education.school.trim() || p.education.grades.trim() || p.education.graduationYear.trim()),
+    details: detailRows(p).length > 0,
     video: !!(p.highlightUrl.trim() || p.matchUrl.trim()),
     coach: !!p.coach.name.trim(),
+    college: collegeRows(p).length > 0,
     online: true,
   };
   const left = LEFT.filter((id) => has[id]);
   const right = RIGHT.filter((id) => has[id]);
-  const inner = 595.28 - PAGE_PAD * 2 - COL_GAP;
-  const leftW = (inner * LEFT_FLEX) / (LEFT_FLEX + 1);
-  const rightW = inner - leftW;
+  const leftW = LEFT_W;
+  const rightW = RIGHT_W;
   const total = (ids: SectionId[], w: number) => ids.reduce((n, id) => n + estimateHeight(id, p, w), 0);
   // The online profile and QR code sit at the bottom of the shorter column.
   if (total(left, leftW) <= total(right, rightW)) left.push("online");
@@ -194,7 +222,7 @@ export function CvDocument({ profile: p, profileUrl, qr, scale = 1 }: { profile:
   const s = makeStyles(scale);
   const age = ageFrom(p.dob);
   const facts = [
-    { label: "Age", value: age !== null ? `${age} (${formatDate(p.dob)})` : "" },
+    { label: "Age", value: age !== null ? String(age) : "" },
     { label: "Club", value: p.club.trim() },
     { label: "Level", value: p.level.trim() },
   ].filter((m) => m.value);
@@ -202,19 +230,13 @@ export function CvDocument({ profile: p, profileUrl, qr, scale = 1 }: { profile:
     { label: "Phone", value: p.contact.phone.trim() },
     { label: "Email", value: p.contact.email.trim() },
     { label: "Based in", value: p.contact.location.trim() },
-    { label: "Nationality", value: p.contact.nationality.trim() },
   ].filter((m) => m.value);
-  const { appearances, goals, assists, cleanSheets, season } = p.stats;
-  const stats = [
-    { label: "Appearances", value: appearances },
-    { label: "Goals", value: goals },
-    { label: "Assists", value: assists },
-    { label: "Clean sheets", value: cleanSheets },
-  ];
+  const season = p.stats.season;
+  const stats = statItems(p).map((st) => ({ label: st.long, value: st.value }));
   const hasStats = stats.some((st) => st.value);
   const initials = p.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const { left, right } = planColumns(p);
-  const render = (id: SectionId) => <CvSection key={id} id={id} p={p} s={s} profileUrl={profileUrl} qr={qr} />;
+  const render = (width: number) => (id: SectionId) => <CvSection key={id} id={id} p={p} s={s} profileUrl={profileUrl} qr={qr} scale={scale} width={width} />;
 
   return (
     <Document title={`${p.name} – Football CV`} author={p.name} creator={SITE.name}>
@@ -249,13 +271,6 @@ export function CvDocument({ profile: p, profileUrl, qr, scale = 1 }: { profile:
           </View>
         </View>
 
-        {p.lookingFor.trim() && (
-          <View style={s.looking}>
-            <Text style={s.lookingLabel}>Looking for</Text>
-            <Text style={s.lookingText}>{p.lookingFor.trim()}</Text>
-          </View>
-        )}
-
         {hasStats && (
           <View style={s.stats}>
             <Text style={s.statsLabel}>{[season.trim() ? `${season.trim()} season` : "This season", p.club.trim()].filter(Boolean).join("  ·  ")}</Text>
@@ -271,8 +286,8 @@ export function CvDocument({ profile: p, profileUrl, qr, scale = 1 }: { profile:
         )}
 
         <View style={s.body}>
-          <View style={[s.col, { flex: LEFT_FLEX }]}>{left.map(render)}</View>
-          <View style={[s.col, { flex: 1 }]}>{right.map(render)}</View>
+          <View style={[s.col, { flex: LEFT_FLEX }]}>{left.map(render(LEFT_W))}</View>
+          <View style={[s.col, { flex: 1 }]}>{right.map(render(RIGHT_W))}</View>
         </View>
 
         <View style={s.footer}>
@@ -314,8 +329,8 @@ function Rows({ rows, s }: { rows: [string, string][]; s: S }) {
   );
 }
 
-function CvSection({ id, p, s, profileUrl, qr }: { id: SectionId; p: Profile; s: S; profileUrl: string; qr: string }) {
-  const linkChars = charsFor(NARROW_COL, (s.line.fontSize as number) ?? 10);
+function CvSection({ id, p, s, profileUrl, qr, scale, width }: { id: SectionId; p: Profile; s: S; profileUrl: string; qr: string; scale: number; width: number }) {
+  const linkChars = charsFor(width, (s.line.fontSize as number) ?? 10);
   switch (id) {
     case "profile":
       return (
@@ -342,7 +357,7 @@ function CvSection({ id, p, s, profileUrl, qr }: { id: SectionId; p: Profile; s:
     case "honours":
       return (
         <View style={s.section}>
-          <Title s={s}>Honours and representative football</Title>
+          <Title s={s}>Honours</Title>
           {cleanList(p.honours).map((h) => (
             <View key={h} style={s.bulletRow} wrap={false}>
               <View style={s.bullet} />
@@ -351,34 +366,20 @@ function CvSection({ id, p, s, profileUrl, qr }: { id: SectionId; p: Profile; s:
           ))}
         </View>
       );
-    case "physical":
+    case "pitch":
+      return <PitchSection p={p} s={s} scale={scale} width={width} />;
+    case "details":
       return (
         <View style={s.section}>
-          <Title s={s}>Physical</Title>
-          <Rows
-            s={s}
-            rows={[
-              ["Height", formatHeight(p.heightCm)],
-              ["Weight", formatWeight(p.physical.weightKg)],
-              ["Preferred foot", p.foot],
-              ["Sprint", p.physical.sprint.trim()],
-              ["Fitness test", p.physical.fitness.trim()],
-            ]}
-          />
+          <Title s={s}>Player details</Title>
+          <Rows s={s} rows={detailRows(p)} />
         </View>
       );
-    case "availability":
+    case "college":
       return (
         <View style={s.section}>
-          <Title s={s}>Availability</Title>
-          <Rows s={s} rows={[["Trials", p.availability.trials.trim()], ["Travel", p.availability.travel.trim()]]} />
-        </View>
-      );
-    case "education":
-      return (
-        <View style={s.section}>
-          <Title s={s}>Education</Title>
-          <Rows s={s} rows={[["School", p.education.school.trim()], ["Grades", p.education.grades.trim()], ["Graduating", p.education.graduationYear.trim()]]} />
+          <Title s={s}>US college</Title>
+          <Rows s={s} rows={collegeRows(p)} />
         </View>
       );
     case "video":
@@ -416,14 +417,12 @@ function CvSection({ id, p, s, profileUrl, qr }: { id: SectionId; p: Profile; s:
           <View style={s.qrRow}>
             {/* eslint-disable-next-line jsx-a11y/alt-text */}
             <Image src={qr} style={s.qr} />
-            <View style={s.qrText}>
-              <Text style={s.small}>Scan for highlights, stats and references</Text>
-              {/* Split after /player/ so the address wraps cleanly instead of running off the page. */}
-              <Link src={profileUrl} style={[s.line, s.link, { marginTop: 3 }]}>
-                {short(profileUrl).replace(/(\/player\/)/, "$1\n")}
-              </Link>
-            </View>
+            <Text style={[s.small, s.qrText]}>Scan for highlights, stats and references</Text>
           </View>
+          {/* Under the code, using the column's full width. Long addresses split after /player/ rather than running off the page. */}
+          <Link src={profileUrl} style={[s.line, s.link, { marginTop: 6 }]}>
+            {short(profileUrl).length <= charsFor(width, s.line.fontSize as number) ? short(profileUrl) : short(profileUrl).replace(/(\/player\/)/, "$1\n")}
+          </Link>
         </View>
       );
   }
@@ -431,18 +430,16 @@ function CvSection({ id, p, s, profileUrl, qr }: { id: SectionId; p: Profile; s:
 
 function CareerTable({ rows, s }: { rows: CareerRow[]; s: S }) {
   const cols = [
-    { key: "club", label: "Club", flex: 2.4 },
-    { key: "seasons", label: "Seasons", flex: 1.3 },
-    { key: "level", label: "Level", flex: 1.9 },
-    { key: "appearances", label: "Apps", flex: 0.75, right: true },
-    { key: "goals", label: "Goals", flex: 0.85, right: true },
+    { key: "club", label: "Club", flex: 2.6 },
+    { key: "years", label: "Years", flex: 1.1 },
+    { key: "level", label: "Level", flex: 2 },
   ] as const;
   return (
     <View style={s.section}>
       <Title s={s}>Career history</Title>
       <View style={[s.tr, { paddingTop: 0 }]}>
         {cols.map((c) => (
-          <Text key={c.key} style={[s.th, { flex: c.flex, textAlign: "right" in c ? "right" : "left" }, c.key === "goals" ? { paddingRight: 0 } : {}]}>
+          <Text key={c.key} style={[s.th, { flex: c.flex }]}>
             {c.label}
           </Text>
         ))}
@@ -453,12 +450,69 @@ function CareerTable({ rows, s }: { rows: CareerRow[]; s: S }) {
             <Text style={s.tdStrong}>{r.club}</Text>
             {r.current && <Text style={s.current}>CURRENT</Text>}
           </View>
-          <Text style={[s.td, { flex: cols[1].flex }]}>{r.seasons || "–"}</Text>
-          <Text style={[s.td, { flex: cols[2].flex }]}>{r.level || "–"}</Text>
-          <Text style={[s.td, { flex: cols[3].flex, textAlign: "right" }]}>{r.appearances || "–"}</Text>
-          <Text style={[s.td, { flex: cols[4].flex, textAlign: "right", paddingRight: 0 }]}>{r.goals || "–"}</Text>
+          <Text style={[s.td, { flex: cols[1].flex }]}>{r.years || "–"}</Text>
+          <Text style={[s.td, { flex: cols[2].flex, paddingRight: 0 }]}>{r.level || "–"}</Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+/** A pitch with the player's positions marked (main position filled), and a numbered key beside it. */
+function PitchSection({ p, s, scale, width }: { p: Profile; s: S; scale: number; width: number }) {
+  const positions = p.positions.filter((pos) => PITCH_SPOTS[pos]);
+  const w = pitchWidth(scale, width);
+  const h = (w * 90) / 68;
+  const k = w / 68;
+  const size = Math.max(15, Math.min(24, 15 * Math.sqrt(scale)));
+  const lines = { stroke: "#b5d4c1", strokeWidth: 0.8, fill: "none" };
+  return (
+    <View style={s.section} wrap={false}>
+      <Title s={s}>{positions.length > 1 ? "Positions" : "Position"}</Title>
+      <View style={s.pitchRow}>
+        <View style={{ width: w, height: h }}>
+          <Svg width={w} height={h} viewBox="0 0 68 90">
+            <Rect x={0} y={0} width={68} height={90} rx={2} fill="#eef7f1" />
+            <Rect x={3} y={3} width={62} height={84} {...lines} />
+            <Line x1={3} y1={45} x2={65} y2={45} {...lines} />
+            <Circle cx={34} cy={45} r={7.5} {...lines} />
+            <Rect x={15} y={3} width={38} height={13} {...lines} />
+            <Rect x={25} y={3} width={18} height={5} {...lines} />
+            <Rect x={15} y={74} width={38} height={13} {...lines} />
+            <Rect x={25} y={82} width={18} height={5} {...lines} />
+            <Path d="M27.5 16 A7 7 0 0 0 40.5 16 M27.5 74 A7 7 0 0 1 40.5 74" {...lines} />
+          </Svg>
+          {positions.map((pos, i) => {
+            const spot = PITCH_SPOTS[pos];
+            const main = i === 0;
+            const mw = size * (pos.length > 2 ? 1.45 : 1.2);
+            return (
+              <View
+                key={pos}
+                style={[
+                  s.marker,
+                  { left: spot.x * 68 * k - mw / 2, top: spot.y * 90 * k - size / 2, width: mw, height: size, backgroundColor: main ? C.green : "#ffffff" },
+                ]}
+              >
+                <Text style={[s.markerText, { fontSize: size * 0.42, color: main ? "#ffffff" : C.green }]}>{pos}</Text>
+              </View>
+            );
+          })}
+        </View>
+        <View style={s.legend}>
+          {positions.map((pos, i) => (
+            <View key={pos} style={s.legendRow}>
+              <View style={[s.legendDot, { backgroundColor: i === 0 ? C.green : "#ffffff" }]}>
+                <Text style={[s.legendNum, { color: i === 0 ? "#ffffff" : C.green }]}>{i + 1}</Text>
+              </View>
+              <Text style={s.legendText}>
+                {POSITION_NAMES[pos] ?? pos}
+                {i === 0 && positions.length > 1 && <Text style={s.legendMain}>{"\n"}MAIN</Text>}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
     </View>
   );
 }

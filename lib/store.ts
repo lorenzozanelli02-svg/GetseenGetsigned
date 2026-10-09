@@ -15,44 +15,44 @@ export type Foot = "" | "Right" | "Left" | "Both";
 export type CareerEntry = {
   id: string;
   club: string;
-  /** e.g. "2023–25" */
-  seasons: string;
-  level: string;
-  appearances: string;
-  goals: string;
+  /** Four-digit years, e.g. "2021" to "2023". Either can be blank. */
+  from: string;
+  to: string;
 };
 
 export type Profile = {
   /** Stable short id; the end of the public link, so links survive name changes. */
   id: string;
+  /** Required. */
   name: string;
   /** JPEG data URL, resized before saving. */
   photo: string;
   /** YYYY-MM-DD */
   dob: string;
+  /** Required: at least one. The first is the main position. */
   positions: string[];
   foot: Foot;
   heightCm: string;
+  /** Required. */
   club: string;
   level: string;
   stats: { season: string; appearances: string; goals: string; assists: string; cleanSheets: string };
   highlightUrl: string;
   matchUrl: string;
-  coach: { name: string; club: string; contact: string };
+  /** Up to 3, picked from STRENGTHS in lib/profile.ts. */
+  strengths: string[];
+  /** Up to 300 characters. */
   bio: string;
-  contact: { phone: string; email: string; location: string; nationality: string };
+  coach: { name: string; club: string; contact: string };
+  contact: { phone: string; email: string; location: string };
   /** Whether phone and email appear on the public player page. They are always on the CV. */
   showContactPublic: boolean;
-  /** One line. */
-  lookingFor: string;
-  /** Up to 4 short tags. */
-  strengths: string[];
+  /* Optional extras ("Add more" in the Profile Builder). */
   /** Previous clubs, most recent first. The current club is added automatically where shown. */
   career: CareerEntry[];
   honours: string[];
-  physical: { weightKg: string; sprint: string; fitness: string };
-  availability: { trials: string; travel: string };
-  education: { school: string; grades: string; graduationYear: string };
+  /** For US college recruiting. */
+  college: { graduationYear: string; gpa: string; major: string };
   updatedAt: string;
 };
 
@@ -161,53 +161,87 @@ export function emptyProfile(): Profile {
     stats: { season: "", appearances: "", goals: "", assists: "", cleanSheets: "" },
     highlightUrl: "",
     matchUrl: "",
-    coach: { name: "", club: "", contact: "" },
-    bio: "",
-    contact: { phone: "", email: "", location: "", nationality: "" },
-    showContactPublic: true,
-    lookingFor: "",
     strengths: [],
+    bio: "",
+    coach: { name: "", club: "", contact: "" },
+    contact: { phone: "", email: "", location: "" },
+    showContactPublic: true,
     career: [],
     honours: [],
-    physical: { weightKg: "", sprint: "", fitness: "" },
-    availability: { trials: "", travel: "" },
-    education: { school: "", grades: "", graduationYear: "" },
+    college: { graduationYear: "", gpa: "", major: "" },
     updatedAt: "",
   };
 }
 
 export function emptyCareerEntry(): CareerEntry {
-  return { id: newId(), club: "", seasons: "", level: "", appearances: "", goals: "" };
+  return { id: newId(), club: "", from: "", to: "" };
+}
+
+/** Saved data from any earlier version of the profile, before fields were added or removed. */
+type SavedProfile = Partial<Omit<Profile, "career">> & {
+  career?: (Partial<CareerEntry> & { seasons?: string })[];
+  previousClubs?: string;
+  education?: { graduationYear?: string };
+};
+
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+const pick = <T extends Record<string, string>>(base: T, saved: unknown): T =>
+  Object.fromEntries(Object.keys(base).map((k) => [k, str((saved as Record<string, unknown> | undefined)?.[k])])) as T;
+
+/** "2023–25", "2022/23" or "2021-2024" from older saves, as four-digit years. */
+function yearsFrom(text: string): { from: string; to: string } {
+  const m = text.match(/(\d{4})(?:\s*[-–/]\s*(\d{2,4}))?/);
+  if (!m) return { from: "", to: "" };
+  const to = m[2] ? (m[2].length === 2 ? m[1].slice(0, 2) + m[2] : m[2]) : "";
+  return { from: m[1], to };
+}
+
+/**
+ * Builds a current Profile from whatever was saved. Only known fields are kept, so
+ * fields removed from the app (weight, availability, nationality and so on) are dropped.
+ */
+function normalise(saved: SavedProfile): Profile {
+  const base = emptyProfile();
+  const career: CareerEntry[] = (saved.career ?? []).map((c) => ({
+    id: str(c.id) || newId(),
+    club: str(c.club),
+    ...(c.from !== undefined || c.to !== undefined ? { from: str(c.from), to: str(c.to) } : yearsFrom(str(c.seasons))),
+  }));
+  // The first version kept previous clubs as text, one per line, e.g. "Norton United (2023–25)".
+  if (!saved.career && saved.previousClubs) {
+    for (const line of saved.previousClubs.split("\n").map((l) => l.trim()).filter(Boolean)) {
+      const m = line.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+      career.push({ id: newId(), club: m ? m[1] : line, ...yearsFrom(m ? m[2] : "") });
+    }
+  }
+  return {
+    id: str(saved.id) || base.id,
+    name: str(saved.name),
+    photo: str(saved.photo),
+    dob: str(saved.dob),
+    positions: Array.isArray(saved.positions) ? saved.positions.filter((p) => typeof p === "string") : [],
+    foot: (["Right", "Left", "Both"] as const).find((f) => f === saved.foot) ?? "",
+    heightCm: str(saved.heightCm),
+    club: str(saved.club),
+    level: str(saved.level),
+    stats: pick(base.stats, saved.stats),
+    highlightUrl: str(saved.highlightUrl),
+    matchUrl: str(saved.matchUrl),
+    strengths: Array.isArray(saved.strengths) ? saved.strengths.filter((t) => typeof t === "string").slice(0, 3) : [],
+    bio: str(saved.bio),
+    coach: pick(base.coach, saved.coach),
+    contact: pick(base.contact, saved.contact),
+    showContactPublic: saved.showContactPublic !== false,
+    career,
+    honours: Array.isArray(saved.honours) ? saved.honours.filter((h) => typeof h === "string") : [],
+    college: { ...pick(base.college, saved.college), ...(!saved.college && saved.education?.graduationYear ? { graduationYear: str(saved.education.graduationYear) } : {}) },
+    updatedAt: str(saved.updatedAt),
+  };
 }
 
 export async function getProfile(): Promise<Profile | null> {
-  const saved = read<(Partial<Profile> & { previousClubs?: string }) | null>(KEYS.profile, null);
-  if (!saved) return null;
-  // Merge over an empty profile so older saves pick up fields added later.
-  const base = emptyProfile();
-  const { previousClubs, ...rest } = saved;
-  const profile: Profile = {
-    ...base,
-    ...rest,
-    stats: { ...base.stats, ...saved.stats },
-    coach: { ...base.coach, ...saved.coach },
-    contact: { ...base.contact, ...saved.contact },
-    physical: { ...base.physical, ...saved.physical },
-    availability: { ...base.availability, ...saved.availability },
-    education: { ...base.education, ...saved.education },
-  };
-  // Older profiles kept previous clubs as text, one per line, e.g. "Norton United (2023–25)".
-  if (!saved.career && previousClubs) {
-    profile.career = previousClubs
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const m = line.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
-        return { ...emptyCareerEntry(), club: m ? m[1] : line, seasons: m ? m[2] : "" };
-      });
-  }
-  return profile;
+  const saved = read<SavedProfile | null>(KEYS.profile, null);
+  return saved ? normalise(saved) : null;
 }
 
 export async function saveProfile(profile: Profile): Promise<Profile> {

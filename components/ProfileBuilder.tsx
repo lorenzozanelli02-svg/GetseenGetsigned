@@ -3,29 +3,100 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ageFrom } from "@/lib/dates";
 import { resizeImage } from "@/lib/image";
-import { formatHeight, formatWeight, LEVELS, MAX_CAREER, MAX_HONOURS, MAX_STRENGTHS, POSITION_NAMES, POSITIONS, STRENGTHS, TRAVEL_OPTIONS } from "@/lib/profile";
+import {
+  BIO_MAX,
+  cleanList,
+  exampleBio,
+  formatHeight,
+  graduationYears,
+  HEIGHTS_CM,
+  isDefensive,
+  LEVELS,
+  MAJORS,
+  MAX_CAREER,
+  MAX_HONOURS,
+  MAX_STRENGTHS,
+  missingRequired,
+  seasonOf,
+  seasonOptions,
+  slugify,
+  statItems,
+  STRENGTHS,
+} from "@/lib/profile";
 import { emptyProfile, getProfile, saveProfile, type Foot, type Profile } from "@/lib/store";
-import { embedUrl, isLink } from "@/lib/video";
-import { CareerEditor, LineList, TagInput } from "./ListEditors";
+import { isLink } from "@/lib/video";
+import { CareerEditor, LineList } from "./ListEditors";
 import { PlayerCard } from "./PlayerCard";
 import { ProfileActions } from "./ProfileActions";
-import { Field, inputClass, Loading, PageHeader, secondaryButton, Section } from "./ui";
+import { ChoiceButtons, chipClass, DateOfBirth, PitchPicker, Select, Stepper, Switch } from "./ProfileInputs";
+import { card, Field, inputClass, Loading, PageHeader, primaryButton, secondaryButton } from "./ui";
 
-const MAX_POSITIONS = 3;
-const BIO_MAX = 500;
+const STEPS = [
+  { short: "You", title: "You", intro: "Who you are and how a club can reach you." },
+  { short: "Football", title: "Your football", intro: "Where you play and who for." },
+  { short: "Season", title: "This season", intro: "Your numbers so far. Leave blank anything you don't know." },
+  { short: "Video", title: "Your video", intro: "Scouts watch before they read. One good link is enough." },
+  { short: "About you", title: "About you", intro: "What kind of player you are, and a coach who can vouch for it." },
+];
+/** The step index for the summary shown after step 5. */
+const OVERVIEW = STEPS.length;
+const LEVEL_OTHER = "__other";
 
+type Errors = Partial<Record<"name" | "positions" | "club", string>>;
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+/** Required fields that are still empty, on one step or all of them. */
+function requiredErrors(p: Profile, step?: number): Errors {
+  const e: Errors = {};
+  const on = (s: number) => step === undefined || step === s;
+  if (on(0) && !p.name.trim()) e.name = "Add your name to carry on.";
+  if (on(1) && !p.positions.length) e.positions = "Tap at least one position.";
+  if (on(1) && !p.club.trim()) e.club = "Add your current club. Between clubs? Put your last one.";
+  return e;
+}
+
+/** One line on what each step has, for the summary. Empty means the step was skipped. */
+function stepSummary(p: Profile, step: number): string {
+  const join = (parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" · ");
+  const age = ageFrom(p.dob);
+  switch (step) {
+    case 0:
+      return join([p.name.trim(), p.contact.location.trim(), age !== null && `Age ${age}`, (p.contact.phone.trim() || p.contact.email.trim()) && "Contact added"]);
+    case 1:
+      return join([p.positions.join(" / "), p.club.trim(), p.level.trim(), p.foot && `${p.foot} foot`, formatHeight(p.heightCm).split(" (")[0]]);
+    case 2:
+      return join(statItems(p).filter((s) => s.value).map((s) => `${s.value} ${s.label.toLowerCase()}`));
+    case 3:
+      return join([isLink(p.highlightUrl) && "Highlights", isLink(p.matchUrl) && "Full match"]);
+    case 4:
+      return join([cleanList(p.strengths).join(", "), p.bio.trim() && "Bio", p.coach.name.trim() && `Reference: ${p.coach.name.trim()}`]);
+    default:
+      return "";
+  }
+}
 
 export function ProfileBuilder() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [step, setStep] = useState(0);
+  const [errors, setErrors] = useState<Errors>({});
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState("");
   const [photoError, setPhotoError] = useState("");
+  const [levelOther, setLevelOther] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const pending = useRef<Profile | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const top = useRef<HTMLDivElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const moved = useRef(false);
 
   useEffect(() => {
-    getProfile().then((p) => setProfile(p ?? emptyProfile()));
+    getProfile().then((p) => {
+      const loaded = p ?? emptyProfile();
+      setProfile(loaded);
+      // Returning players land on the summary; new ones start at step 1.
+      if (missingRequired(loaded).length === 0) setStep(OVERVIEW);
+    });
   }, []);
 
   /** Writes any unsaved edits now. Safe to call at any time. */
@@ -45,36 +116,68 @@ export function ProfileBuilder() {
   // Save when leaving the page with edits still waiting.
   useEffect(() => flush, [flush]);
 
+  // After moving to another step, bring it into view and move focus to its heading.
+  useEffect(() => {
+    if (!moved.current) return;
+    moved.current = false;
+    // 90px clears the preview strip pinned to the top on phones.
+    if (top.current && top.current.getBoundingClientRect().top < 90) top.current.scrollIntoView({ block: "start" });
+    heading.current?.focus({ preventScroll: true });
+  }, [step]);
+
   function update(changes: Partial<Profile>) {
     if (!profile) return;
     const next = { ...profile, ...changes };
     setProfile(next);
+    // Clear an error as soon as the field is filled in.
+    setErrors((e) => {
+      const still = requiredErrors(next);
+      return Object.fromEntries(Object.keys(e).filter((k) => k in still).map((k) => [k, e[k as keyof Errors]]));
+    });
     pending.current = next;
     setSaveState("saving");
     clearTimeout(timer.current);
     timer.current = setTimeout(flush, 400);
   }
 
+  function goTo(next: number) {
+    flush();
+    moved.current = true;
+    setStep(next);
+  }
+
+  function onNext() {
+    if (!profile) return;
+    const last = step === STEPS.length - 1;
+    const e = requiredErrors(profile, last ? undefined : step);
+    setErrors(e);
+    if (e.name) {
+      if (step === 0) document.getElementById("profile-name")?.focus();
+      else goTo(0);
+    } else if (e.positions || e.club) {
+      if (step === 1) document.getElementById(e.positions ? "position-ST" : "profile-club")?.focus();
+      else goTo(1);
+    } else {
+      goTo(last ? OVERVIEW : step + 1);
+    }
+  }
+
   if (!profile) return <Loading />;
 
-  const text = (key: "name" | "dob" | "heightCm" | "club" | "level" | "highlightUrl" | "matchUrl" | "bio" | "lookingFor") =>
-    ({ id: `profile-${key}`, value: profile[key], onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => update({ [key]: e.target.value }) });
-  const stat = (key: keyof Profile["stats"]) =>
-    ({ id: `profile-stat-${key}`, value: profile.stats[key], onChange: (e: React.ChangeEvent<HTMLInputElement>) => update({ stats: { ...profile.stats, [key]: e.target.value } }) });
-  const coach = (key: keyof Profile["coach"]) =>
-    ({ id: `profile-coach-${key}`, value: profile.coach[key], onChange: (e: React.ChangeEvent<HTMLInputElement>) => update({ coach: { ...profile.coach, [key]: e.target.value } }) });
-  /** Inputs for the grouped fields: contact, physical, availability, education. */
-  function group<G extends "contact" | "physical" | "availability" | "education">(g: G, key: keyof Profile[G] & string) {
+  const text = (key: "name" | "club" | "highlightUrl" | "matchUrl" | "bio") => ({
+    id: `profile-${key}`,
+    value: profile[key],
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => update({ [key]: e.target.value }),
+  });
+  function nested<G extends "contact" | "coach" | "college">(g: G, key: keyof Profile[G] & string) {
     const current = profile![g] as Record<string, string>;
-    return { id: `profile-${g}-${key}`, value: current[key], onChange: (e: React.ChangeEvent<HTMLInputElement>) => update({ [g]: { ...current, [key]: e.target.value } } as Partial<Profile>) };
+    return {
+      id: `profile-${g}-${key}`,
+      value: current[key],
+      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => update({ [g]: { ...current, [key]: e.target.value } } as Partial<Profile>),
+    };
   }
-
-  function togglePosition(pos: string) {
-    if (!profile) return;
-    const has = profile.positions.includes(pos);
-    if (!has && profile.positions.length >= MAX_POSITIONS) return;
-    update({ positions: has ? profile.positions.filter((p) => p !== pos) : [...profile.positions, pos] });
-  }
+  const setStat = (key: keyof Profile["stats"], value: string) => update({ stats: { ...profile.stats, [key]: value, season: profile.stats.season || seasonOf() } });
 
   async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -88,285 +191,517 @@ export function ProfileBuilder() {
     }
   }
 
-  const age = ageFrom(profile.dob);
-  const height = formatHeight(profile.heightCm);
+  const error = (msg?: string) => (msg ? <span className="text-danger">{msg}</span> : undefined);
   const badLink = (v: string) => v.trim() !== "" && !isLink(v);
+  const showOtherLevel = levelOther || (profile.level !== "" && !LEVELS.includes(profile.level));
+  const heights = profile.heightCm && !HEIGHTS_CM.includes(profile.heightCm) ? [profile.heightCm, ...HEIGHTS_CM] : HEIGHTS_CM;
+  const seasons = seasonOptions();
+  if (profile.stats.season && !seasons.includes(profile.stats.season)) seasons.push(profile.stats.season);
+  const strengthOptions = [...STRENGTHS, ...profile.strengths.filter((s) => !STRENGTHS.includes(s))];
+  const strengthsFull = profile.strengths.length >= MAX_STRENGTHS;
+  const example = exampleBio(profile);
+
+  const steps: React.ReactNode[] = [
+    // 1. You
+    <>
+      <Field label="Full name" htmlFor="profile-name" required hint={error(errors.name)}>
+        <input {...text("name")} className={inputClass} autoComplete="name" placeholder="e.g. Jamie Walker" maxLength={60} aria-invalid={!!errors.name} />
+      </Field>
+
+      <Field label="Photo" htmlFor="profile-photo" hint={error(photoError) ?? "A clear head-and-shoulders shot or an action photo."}>
+        <div className="flex items-center gap-3">
+          <Avatar profile={profile} className="size-14 text-lg" />
+          <label htmlFor="profile-photo" className={secondaryButton}>
+            {profile.photo ? "Change photo" : "Add a photo"}
+          </label>
+          <input id="profile-photo" type="file" accept="image/*" onChange={onPhoto} className="sr-only" />
+          {profile.photo && (
+            <button type="button" onClick={() => update({ photo: "" })} className="cursor-pointer text-sm text-muted underline underline-offset-4 hover:text-accent">
+              Remove
+            </button>
+          )}
+        </div>
+      </Field>
+
+      <DateOfBirth value={profile.dob} onChange={(dob) => update({ dob })} />
+
+      <Field label="Town or city" htmlFor="profile-contact-location">
+        <input {...nested("contact", "location")} autoComplete="address-level2" className={inputClass} maxLength={40} placeholder="e.g. Leeds" />
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Phone" htmlFor="profile-contact-phone">
+          <input {...nested("contact", "phone")} type="tel" inputMode="tel" autoComplete="tel" className={inputClass} maxLength={30} />
+        </Field>
+        <Field label="Email" htmlFor="profile-contact-email">
+          <input {...nested("contact", "email")} type="email" inputMode="email" autoComplete="email" className={inputClass} maxLength={80} />
+        </Field>
+      </div>
+
+      <Switch id="profile-showContactPublic" checked={profile.showContactPublic} onChange={(showContactPublic) => update({ showContactPublic })}>
+        Show my phone and email on my public page
+        <span className="mt-0.5 block text-xs leading-relaxed text-muted">They&rsquo;re always on your CV. Under 18? Ask a parent or guardian first.</span>
+      </Switch>
+    </>,
+
+    // 2. Your football
+    <>
+      <PitchPicker value={profile.positions} onChange={(positions) => update({ positions })} invalid={!!errors.positions} />
+      {errors.positions && <p className="-mt-3 text-xs text-danger">{errors.positions}</p>}
+
+      <ChoiceButtons
+        name="profile-foot"
+        label="Preferred foot"
+        value={profile.foot}
+        onChange={(foot) => update({ foot: foot as Foot })}
+        options={[
+          { value: "Right", label: "Right" },
+          { value: "Left", label: "Left" },
+          { value: "Both", label: "Both" },
+        ]}
+      />
+
+      <Field label="Height" htmlFor="profile-heightCm">
+        <Select id="profile-heightCm" value={profile.heightCm} onChange={(e) => update({ heightCm: e.target.value })} className="sm:max-w-64">
+          <option value="">Pick your height</option>
+          {heights.map((h) => (
+            <option key={h} value={h}>
+              {formatHeight(h) || `${h} cm`}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
+      <Field label="Current club" htmlFor="profile-club" required hint={error(errors.club)}>
+        <input {...text("club")} className={inputClass} placeholder="e.g. Hartley Town FC" maxLength={60} aria-invalid={!!errors.club} />
+      </Field>
+
+      <Field label="Level" htmlFor="profile-level">
+        <Select
+          id="profile-level"
+          value={showOtherLevel ? LEVEL_OTHER : profile.level}
+          onChange={(e) => {
+            const v = e.target.value;
+            setLevelOther(v === LEVEL_OTHER);
+            update({ level: v === LEVEL_OTHER ? "" : v });
+          }}
+        >
+          <option value="">Pick a level</option>
+          {LEVELS.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+          <option value={LEVEL_OTHER}>Something else</option>
+        </Select>
+      </Field>
+      {showOtherLevel && (
+        <Field label="Your level" htmlFor="profile-level-other">
+          <input id="profile-level-other" value={profile.level} onChange={(e) => update({ level: e.target.value })} className={inputClass} maxLength={50} placeholder="e.g. Isthmian League" autoFocus />
+        </Field>
+      )}
+    </>,
+
+    // 3. This season
+    <>
+      <Field label="Season" htmlFor="profile-stat-season">
+        <Select id="profile-stat-season" value={profile.stats.season || seasonOf()} onChange={(e) => update({ stats: { ...profile.stats, season: e.target.value } })} className="max-w-48">
+          {seasons.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+        {statItems(profile).map((s) => (
+          <Stepper key={s.key} id={`profile-stat-${s.key}`} label={s.long} value={s.value} onChange={(v) => setStat(s.key as keyof Profile["stats"], v)} />
+        ))}
+      </div>
+      {!isDefensive(profile) && <p className="text-xs text-muted">Goalkeepers and defenders also get a clean sheets count.</p>}
+    </>,
+
+    // 4. Your video
+    <>
+      <Field
+        label="Highlight video link"
+        htmlFor="profile-highlightUrl"
+        hint={
+          error(badLink(profile.highlightUrl) ? "Paste the full link, starting with https://" : undefined) ?? (
+            <>
+              On YouTube, set the video to <strong className="font-semibold text-ink">Unlisted</strong>: only people with the link can watch it, and it won&rsquo;t show up in search. Vimeo, Hudl and Veo links work too.
+            </>
+          )
+        }
+      >
+        <input {...text("highlightUrl")} type="url" inputMode="url" autoComplete="off" className={inputClass} placeholder="https://youtu.be/…" />
+      </Field>
+      <Field
+        label="Full match link (optional)"
+        htmlFor="profile-matchUrl"
+        hint={error(badLink(profile.matchUrl) ? "Paste the full link, starting with https://" : undefined) ?? "Scouts often like to see a whole game."}
+      >
+        <input {...text("matchUrl")} type="url" inputMode="url" autoComplete="off" className={inputClass} placeholder="https://" />
+      </Field>
+    </>,
+
+    // 5. About you
+    <>
+      <fieldset className="min-w-0">
+        <legend className="text-sm font-medium text-ink/90">Key strengths</legend>
+        <p aria-live="polite" className="mt-1 mb-3 text-xs text-muted">
+          Pick {MAX_STRENGTHS}. {profile.strengths.length} of {MAX_STRENGTHS} picked.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {strengthOptions.map((s) => {
+            const on = profile.strengths.includes(s);
+            return (
+              <button
+                key={s}
+                id={`strength-${slugify(s)}`}
+                type="button"
+                aria-pressed={on}
+                disabled={!on && strengthsFull}
+                onClick={() => update({ strengths: on ? profile.strengths.filter((x) => x !== s) : [...profile.strengths, s] })}
+                className={`${chipClass(on)} min-h-10 px-3.5`}
+              >
+                {s}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <Field label="Short bio" htmlFor="profile-bio" hint={`${profile.bio.length}/${BIO_MAX} characters. How you play and what you're looking for.`}>
+        <textarea {...text("bio")} rows={4} maxLength={BIO_MAX} className={inputClass} placeholder="A few sentences about your game" />
+      </Field>
+      {!profile.bio.trim() && (
+        <div className="-mt-1 rounded-xl border border-dashed border-line p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Example from your answers</p>
+          <p className="mt-1.5 text-sm leading-relaxed text-ink/80">{example}</p>
+          <button type="button" onClick={() => update({ bio: example.slice(0, BIO_MAX) })} className="mt-3 min-h-10 cursor-pointer text-sm font-semibold text-accent underline-offset-4 hover:underline">
+            Use this and edit it
+          </button>
+        </div>
+      )}
+
+      <fieldset className="grid min-w-0 gap-4">
+        <legend className="mb-1 text-sm font-medium text-ink/90">
+          Coach reference <span className="text-xs font-normal text-muted">· ask them first</span>
+        </legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Coach's name" htmlFor="profile-coach-name">
+            <input {...nested("coach", "name")} className={inputClass} maxLength={60} />
+          </Field>
+          <Field label="Their club" htmlFor="profile-coach-club">
+            <input {...nested("coach", "club")} className={inputClass} maxLength={60} />
+          </Field>
+        </div>
+        <Field label="Email or phone" htmlFor="profile-coach-contact">
+          <input {...nested("coach", "contact")} className={inputClass} maxLength={80} />
+        </Field>
+      </fieldset>
+    </>,
+  ];
+
+  const optional = step >= 2;
 
   return (
-    <div className="grid gap-8">
-      <PageHeader title="Profile Builder" intro="Fill in your details and your player card updates as you type. Everything saves automatically.">
+    <div className="grid grid-cols-1 gap-6 sm:gap-8">
+      <PageHeader title="Profile Builder" intro="Five quick steps. Only your name, position and club are needed. Skip anything else." introClassName="hidden sm:block">
         <SaveStatus state={saveState} error={saveError} />
       </PageHeader>
 
-      <ProfileActions profile={profile} showViewLink beforeAction={flush} />
+      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:gap-12">
+        <div className="grid min-w-0 grid-cols-1 gap-5">
+          {/* On phones the preview is a compact strip, pinned to the top of the screen, that opens into the full card. */}
+          <div className="sticky top-0 z-20 -mx-4 -my-2 bg-bg/92 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:hidden">
+            <PreviewStrip profile={profile} showStats={step === 2} open={previewOpen} onToggle={() => setPreviewOpen((o) => !o)} />
+          </div>
+          {previewOpen && (
+            <div id="full-preview" className="lg:hidden">
+              <PlayerCard profile={profile} preview />
+            </div>
+          )}
 
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:gap-12">
-        <form className="grid min-w-0 gap-5" onSubmit={(e) => e.preventDefault()} aria-label="Your player profile">
-          <Section title="About you">
-            <Field label="Full name" htmlFor="profile-name">
-              <input {...text("name")} className={inputClass} autoComplete="name" placeholder="e.g. Jamie Walker" maxLength={60} />
-            </Field>
+          <div ref={top} className="scroll-mt-24 lg:scroll-mt-4">
+            <Progress step={step} onJump={goTo} />
+          </div>
 
-            <Field label="Photo" htmlFor="profile-photo" hint={photoError ? <span className="text-danger">{photoError}</span> : "A clear head-and-shoulders shot or an action photo. JPEG or PNG."}>
-              <div className="flex flex-wrap items-center gap-3">
-                <label htmlFor="profile-photo" className={secondaryButton}>
-                  {profile.photo ? "Change photo" : "Upload photo"}
-                </label>
-                <input id="profile-photo" type="file" accept="image/*" onChange={onPhoto} className="sr-only" />
-                {profile.photo && (
-                  <button type="button" onClick={() => update({ photo: "" })} className="cursor-pointer text-sm text-muted underline underline-offset-4 hover:text-accent">
-                    Remove
+          {step === OVERVIEW ? (
+            <Overview profile={profile} headingRef={heading} onEdit={goTo} flush={flush} update={update} />
+          ) : (
+            <form
+              noValidate
+              aria-labelledby="step-title"
+              onSubmit={(e) => {
+                e.preventDefault();
+                onNext();
+              }}
+              className="grid grid-cols-1 gap-5"
+            >
+              <section className={`${card} grid min-w-0 grid-cols-1 gap-5 p-5 sm:p-6`}>
+                <div>
+                  <div className="flex items-center gap-3">
+                    <h2 id="step-title" ref={heading} tabIndex={-1} className="font-display text-3xl leading-none font-extrabold uppercase focus:outline-none sm:text-4xl">
+                      {STEPS[step].title}
+                    </h2>
+                    {optional && <span className="rounded-full border border-line px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Optional</span>}
+                  </div>
+                  <p className="mt-2 text-[15px] leading-relaxed text-muted">{STEPS[step].intro}</p>
+                  {step < 2 && (
+                    <p className="mt-1 text-xs text-muted">
+                      <span className="text-accent">*</span> Required. Everything else can be skipped.
+                    </p>
+                  )}
+                </div>
+                {steps[step]}
+              </section>
+
+              <div className="sticky bottom-0 z-10 -mx-4 flex items-center gap-3 border-t border-line bg-bg/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+                {step > 0 && (
+                  <button id="step-back" type="button" onClick={() => goTo(step - 1)} className={secondaryButton}>
+                    <span aria-hidden="true">←</span> Back
                   </button>
                 )}
+                <button id="step-next" type="submit" className={`${primaryButton} ml-auto min-w-36 flex-1 sm:flex-none`}>
+                  {step === STEPS.length - 1 ? "Finish" : "Next"} <span aria-hidden="true">→</span>
+                </button>
               </div>
-            </Field>
+            </form>
+          )}
+        </div>
 
-            <Field label="Date of birth" htmlFor="profile-dob" hint={age !== null ? `Age ${age}` : undefined}>
-              <input {...text("dob")} type="date" className={`${inputClass} sm:max-w-56`} max={new Date().toISOString().slice(0, 10)} />
-            </Field>
-
-            <div className="flex flex-col gap-2">
-              <span id="positions-label" className="text-sm font-medium text-ink/90">
-                Position(s) <span className="font-normal text-muted">· pick up to {MAX_POSITIONS}</span>
-              </span>
-              <div role="group" aria-labelledby="positions-label" className="flex flex-wrap gap-2">
-                {POSITIONS.map((pos) => {
-                  const on = profile.positions.includes(pos);
-                  const full = !on && profile.positions.length >= MAX_POSITIONS;
-                  return (
-                    <button
-                      key={pos}
-                      type="button"
-                      aria-pressed={on}
-                      title={POSITION_NAMES[pos]}
-                      disabled={full}
-                      onClick={() => togglePosition(pos)}
-                      className={`min-h-10 min-w-12 cursor-pointer rounded-full border px-3 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
-                        on ? "border-accent bg-accent text-on-accent" : "border-line text-ink/80 hover:border-accent hover:text-accent"
-                      }`}
-                    >
-                      {pos}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-2 text-sm font-medium text-ink/90">Preferred foot</legend>
-              <div className="flex flex-wrap gap-2">
-                {(["Right", "Left", "Both"] as Foot[]).map((foot) => (
-                  <label
-                    key={foot}
-                    className={`inline-flex min-h-10 cursor-pointer items-center rounded-full border px-4 text-sm font-semibold transition-colors has-focus-visible:outline-2 has-focus-visible:outline-accent ${
-                      profile.foot === foot ? "border-accent bg-accent text-on-accent" : "border-line text-ink/80 hover:border-accent"
-                    }`}
-                  >
-                    <input type="radio" name="foot" value={foot} checked={profile.foot === foot} onChange={() => update({ foot })} className="sr-only" />
-                    {foot}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          </Section>
-
-          <Section title="What you're looking for">
-            <Field label="In one line" htmlFor="profile-lookingFor" hint="Shown near the top of your card and CV.">
-              <input {...text("lookingFor")} className={inputClass} maxLength={120} placeholder="e.g. A trial at Step 3 or above, or a US college scholarship for fall 2027" />
-            </Field>
-          </Section>
-
-          <Section title="Contact">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Phone" htmlFor="profile-contact-phone">
-                <input {...group("contact", "phone")} type="tel" autoComplete="tel" className={inputClass} maxLength={30} />
-              </Field>
-              <Field label="Email" htmlFor="profile-contact-email">
-                <input {...group("contact", "email")} type="email" autoComplete="email" className={inputClass} maxLength={80} />
-              </Field>
-              <Field label="Town or city" htmlFor="profile-contact-location">
-                <input {...group("contact", "location")} autoComplete="address-level2" className={inputClass} maxLength={40} placeholder="e.g. Leeds" />
-              </Field>
-              <Field label="Nationality" htmlFor="profile-contact-nationality">
-                <input {...group("contact", "nationality")} className={inputClass} maxLength={40} placeholder="e.g. English" />
-              </Field>
-            </div>
-            <label className="flex cursor-pointer items-start gap-3 text-sm text-ink/90">
-              <input
-                id="profile-showContactPublic"
-                type="checkbox"
-                checked={profile.showContactPublic}
-                onChange={(e) => update({ showContactPublic: e.target.checked })}
-                className="mt-0.5 size-4 accent-[var(--color-accent)]"
-              />
-              <span>
-                Show my phone and email on my public page
-                <span className="block text-xs text-muted">They&rsquo;re always on your CV. If you&rsquo;re under 18, ask a parent or guardian first.</span>
-              </span>
-            </label>
-          </Section>
-
-          <Section title="Club">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Current club" htmlFor="profile-club">
-                <input {...text("club")} className={inputClass} placeholder="e.g. Hartley Town FC" maxLength={60} />
-              </Field>
-              <Field label="Level" htmlFor="profile-level" hint="Pick one or type your own.">
-                <input {...text("level")} list="level-options" className={inputClass} placeholder="e.g. Step 5" maxLength={50} />
-                <datalist id="level-options">
-                  {LEVELS.map((l) => (
-                    <option key={l} value={l} />
-                  ))}
-                </datalist>
-              </Field>
-            </div>
-          </Section>
-
-          <Section title="This season">
-            <Field label="Season" htmlFor="profile-stat-season">
-              <input {...stat("season")} className={`${inputClass} sm:max-w-40`} placeholder="2025/26" maxLength={12} />
-            </Field>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Field label="Appearances" htmlFor="profile-stat-appearances">
-                <input {...stat("appearances")} type="number" inputMode="numeric" min={0} className={inputClass} />
-              </Field>
-              <Field label="Goals" htmlFor="profile-stat-goals">
-                <input {...stat("goals")} type="number" inputMode="numeric" min={0} className={inputClass} />
-              </Field>
-              <Field label="Assists" htmlFor="profile-stat-assists">
-                <input {...stat("assists")} type="number" inputMode="numeric" min={0} className={inputClass} />
-              </Field>
-              <Field label="Clean sheets" htmlFor="profile-stat-cleanSheets">
-                <input {...stat("cleanSheets")} type="number" inputMode="numeric" min={0} className={inputClass} />
-              </Field>
-            </div>
-          </Section>
-
-          <Section title="Career history">
-            <p className="-mt-1 text-xs leading-relaxed text-muted">Your previous clubs, most recent first. Your current club and this season&rsquo;s numbers are added at the top automatically.</p>
-            <CareerEditor entries={profile.career} onChange={(career) => update({ career })} max={MAX_CAREER} />
-          </Section>
-
-          <Section title="Key strengths">
-            <Field label={`Up to ${MAX_STRENGTHS} short tags`} htmlFor="profile-strength-input">
-              <TagInput id="profile-strength-input" tags={profile.strengths} onChange={(strengths) => update({ strengths })} suggestions={STRENGTHS} max={MAX_STRENGTHS} />
-            </Field>
-          </Section>
-
-          <Section title="Honours and representative football">
-            <p className="-mt-1 text-xs leading-relaxed text-muted">County, district or school squads, academy spells and awards. One per line.</p>
-            <LineList
-              idPrefix="profile-honour"
-              items={profile.honours}
-              onChange={(honours) => update({ honours })}
-              max={MAX_HONOURS}
-              itemLabel="Honour"
-              addLabel="Add an honour"
-              placeholder="e.g. West Riding County FA U18 squad (2025)"
-            />
-          </Section>
-
-          <Section title="Physical">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Height (cm)" htmlFor="profile-heightCm" hint={height ? height.replace(/^\d+ cm /, "") : "e.g. 180"}>
-                <input {...text("heightCm")} type="number" inputMode="numeric" min={120} max={220} className={inputClass} placeholder="180" />
-              </Field>
-              <Field label="Weight (kg)" htmlFor="profile-physical-weightKg" hint={formatWeight(profile.physical.weightKg).replace(/^\d+ kg /, "") || "e.g. 72"}>
-                <input {...group("physical", "weightKg")} type="number" inputMode="numeric" min={30} max={150} className={inputClass} placeholder="72" />
-              </Field>
-              <Field label="Sprint time (optional)" htmlFor="profile-physical-sprint">
-                <input {...group("physical", "sprint")} className={inputClass} maxLength={30} placeholder="e.g. 30 m in 4.1 s" />
-              </Field>
-              <Field label="Fitness test (optional)" htmlFor="profile-physical-fitness">
-                <input {...group("physical", "fitness")} className={inputClass} maxLength={40} placeholder="e.g. Bleep test level 13.4" />
-              </Field>
-            </div>
-          </Section>
-
-          <Section title="Availability">
-            <Field label="When you can trial" htmlFor="profile-availability-trials">
-              <input {...group("availability", "trials")} className={inputClass} maxLength={80} placeholder="e.g. Weekends and Tuesday evenings, from November" />
-            </Field>
-            <Field label="How far you can travel" htmlFor="profile-availability-travel" hint="Pick one or type your own.">
-              <input {...group("availability", "travel")} list="travel-options" className={inputClass} maxLength={60} placeholder="e.g. Up to 50 miles" />
-              <datalist id="travel-options">
-                {TRAVEL_OPTIONS.map((t) => (
-                  <option key={t} value={t} />
-                ))}
-              </datalist>
-            </Field>
-          </Section>
-
-          <Section title="Education">
-            <Field label="School or college" htmlFor="profile-education-school">
-              <input {...group("education", "school")} className={inputClass} maxLength={60} />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
-              <Field label="Grades" htmlFor="profile-education-grades" hint="GCSEs, A levels, BTEC, or GPA for US colleges.">
-                <input {...group("education", "grades")} className={inputClass} maxLength={90} />
-              </Field>
-              <Field label="Graduation year" htmlFor="profile-education-graduationYear">
-                <input {...group("education", "graduationYear")} type="number" inputMode="numeric" min={2015} max={2040} className={inputClass} placeholder="2026" />
-              </Field>
-            </div>
-          </Section>
-
-          <Section title="Video">
-            <Field
-              label="Highlight video link"
-              htmlFor="profile-highlightUrl"
-              hint={
-                badLink(profile.highlightUrl) ? (
-                  <span className="text-danger">Paste the full link, starting with https://</span>
-                ) : profile.highlightUrl && !embedUrl(profile.highlightUrl) ? (
-                  "This link shows as a button. YouTube and Vimeo links play on your card."
-                ) : (
-                  "YouTube and Vimeo links play on your card. Hudl, Veo and other links show as a button."
-                )
-              }
-            >
-              <input {...text("highlightUrl")} type="url" inputMode="url" className={inputClass} placeholder="https://youtu.be/…" />
-            </Field>
-            <Field
-              label="Full match link"
-              htmlFor="profile-matchUrl"
-              hint={badLink(profile.matchUrl) ? <span className="text-danger">Paste the full link, starting with https://</span> : "Optional. Scouts often want to see a whole game."}
-            >
-              <input {...text("matchUrl")} type="url" inputMode="url" className={inputClass} placeholder="https://" />
-            </Field>
-          </Section>
-
-          <Section title="Coach reference">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Coach name" htmlFor="profile-coach-name">
-                <input {...coach("name")} className={inputClass} maxLength={60} />
-              </Field>
-              <Field label="Their club" htmlFor="profile-coach-club">
-                <input {...coach("club")} className={inputClass} maxLength={60} />
-              </Field>
-            </div>
-            <Field label="Contact (email or phone)" htmlFor="profile-coach-contact" hint="Ask your coach before you share their details.">
-              <input {...coach("contact")} className={inputClass} maxLength={80} />
-            </Field>
-          </Section>
-
-          <Section title="Short bio">
-            <Field
-              label="About your game"
-              htmlFor="profile-bio"
-              hint={`2–4 sentences: how you play, your strengths and what you're looking for. ${profile.bio.length}/${BIO_MAX}`}
-            >
-              <textarea {...text("bio")} rows={5} maxLength={BIO_MAX} className={inputClass} />
-            </Field>
-          </Section>
-        </form>
-
-        <div className="min-w-0 lg:sticky lg:top-6 lg:max-h-[calc(100svh-3rem)] lg:overflow-y-auto lg:pb-2">
+        <div className="hidden min-w-0 lg:sticky lg:top-6 lg:block lg:max-h-[calc(100svh-3rem)] lg:overflow-y-auto lg:pb-2">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted">Live preview</h2>
           <PlayerCard profile={profile} preview />
         </div>
       </div>
     </div>
+  );
+}
+
+function Progress({ step, onJump }: { step: number; onJump: (step: number) => void }) {
+  const done = step === OVERVIEW;
+  return (
+    <nav aria-label="Profile steps">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
+        {done ? "All 5 steps done" : `Step ${step + 1} of ${STEPS.length}`}
+        {!done && <span className="ml-2 font-medium normal-case tracking-normal text-muted sm:hidden">{STEPS[step].title}</span>}
+      </p>
+      <ol className="mt-2 grid grid-cols-5 gap-1.5">
+        {STEPS.map((s, i) => (
+          <li key={s.short}>
+            <button
+              type="button"
+              onClick={() => onJump(i)}
+              aria-current={i === step ? "step" : undefined}
+              aria-label={`Step ${i + 1}: ${s.title}`}
+              className="group flex w-full cursor-pointer flex-col gap-1.5 py-1.5 text-left"
+            >
+              <span
+                className={`h-1.5 w-full rounded-full transition-colors ${
+                  done || i < step ? "bg-accent" : i === step ? "bg-accent shadow-[0_0_12px_0_var(--color-accent)]" : "bg-line group-hover:bg-muted/40"
+                }`}
+              />
+              <span className={`hidden truncate text-xs sm:block ${i === step ? "font-semibold text-ink" : "text-muted group-hover:text-ink"}`}>{s.short}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+function Overview({
+  profile,
+  headingRef,
+  onEdit,
+  flush,
+  update,
+}: {
+  profile: Profile;
+  headingRef: React.RefObject<HTMLHeadingElement | null>;
+  onEdit: (step: number) => void;
+  flush: () => void;
+  update: (changes: Partial<Profile>) => void;
+}) {
+  const first = profile.name.trim().split(/\s+/)[0];
+  return (
+    <div className="grid grid-cols-1 gap-5">
+      <section className={`${card} grid grid-cols-1 gap-4 border-accent/35 bg-[radial-gradient(120%_120%_at_100%_0%,rgb(59_229_132/0.12),transparent_60%)] p-5 sm:p-6`}>
+        <div>
+          <h2 ref={headingRef} tabIndex={-1} className="font-display text-3xl leading-none font-extrabold uppercase focus:outline-none sm:text-4xl">
+            {first ? `You're set, ${first}` : "You're set"}
+          </h2>
+          <p className="mt-2 text-[15px] leading-relaxed text-muted">Share your page with clubs or download your CV. You can change anything at any time.</p>
+        </div>
+        <ProfileActions profile={profile} showViewLink beforeAction={flush} />
+      </section>
+
+      <ol className={`${card} divide-y divide-line`} aria-label="Your answers">
+        {STEPS.map((s, i) => {
+          const summary = stepSummary(profile, i);
+          return (
+            <li key={s.short} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+              <span
+                aria-hidden="true"
+                className={`flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${summary ? "bg-accent text-on-accent" : "border border-line text-muted"}`}
+              >
+                {summary ? "✓" : i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">{s.title}</p>
+                <p className={`truncate text-sm ${summary ? "text-muted" : "text-muted/60"}`}>{summary || "Skipped"}</p>
+              </div>
+              <button type="button" onClick={() => onEdit(i)} aria-label={`Edit ${s.title}`} className="min-h-10 shrink-0 cursor-pointer rounded-full px-3 text-sm font-semibold text-accent transition-colors hover:bg-accent/10">
+                {summary ? "Edit" : "Add"}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+
+      <AddMore profile={profile} update={update} />
+    </div>
+  );
+}
+
+function AddMore({ profile, update }: { profile: Profile; update: (changes: Partial<Profile>) => void }) {
+  const college = profile.college;
+  const added =
+    profile.career.filter((c) => c.club.trim()).length + cleanList(profile.honours).length + (Object.values(college).some((v) => v.trim()) ? 1 : 0);
+  const years = graduationYears();
+  if (college.graduationYear && !years.includes(college.graduationYear)) years.unshift(college.graduationYear);
+  const setCollege = (key: keyof Profile["college"], value: string) => update({ college: { ...college, [key]: value } });
+  const subhead = "text-xs font-semibold uppercase tracking-[0.18em] text-accent";
+
+  return (
+    <details id="add-more" className={`${card} group`}>
+      <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-5 py-4 sm:px-6 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="block font-semibold">
+            Add more <span className="font-normal text-muted">(optional)</span>
+          </span>
+          <span className="mt-0.5 block text-sm text-muted">Previous clubs, honours and US college details</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {added > 0 && <span className="rounded-full bg-accent/12 px-2.5 py-0.5 text-xs font-semibold text-accent">{added} added</span>}
+          <svg aria-hidden="true" viewBox="0 0 20 20" className="size-5 text-muted transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </summary>
+
+      <div className="grid grid-cols-1 gap-8 border-t border-line px-5 py-6 sm:px-6">
+        <section className="grid gap-3">
+          <div>
+            <h3 className={subhead}>Previous clubs</h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted">Most recent first. Your current club is added at the top automatically.</p>
+          </div>
+          <CareerEditor entries={profile.career} onChange={(career) => update({ career })} max={MAX_CAREER} />
+        </section>
+
+        <section className="grid gap-3">
+          <div>
+            <h3 className={subhead}>Honours</h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted">County, district or school squads, academy spells and awards.</p>
+          </div>
+          <LineList
+            idPrefix="profile-honour"
+            items={profile.honours}
+            onChange={(honours) => update({ honours })}
+            max={MAX_HONOURS}
+            itemLabel="Honour"
+            addLabel="Add an honour"
+            placeholder="e.g. County FA U18 squad (2025)"
+          />
+        </section>
+
+        <section className="grid gap-3">
+          <div>
+            <h3 className={subhead}>US college</h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted">Only if you&rsquo;re applying to play college soccer in the US.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-[1fr_0.7fr_1.3fr]">
+            <Field label="Graduation year" htmlFor="profile-college-graduationYear">
+              <Select id="profile-college-graduationYear" value={college.graduationYear} onChange={(e) => setCollege("graduationYear", e.target.value)}>
+                <option value="">Year</option>
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="GPA" htmlFor="profile-college-gpa">
+              <input
+                id="profile-college-gpa"
+                value={college.gpa}
+                onChange={(e) => setCollege("gpa", e.target.value.replace(/[^\d.]/g, "").slice(0, 4))}
+                inputMode="decimal"
+                className={inputClass}
+                placeholder="e.g. 3.6"
+              />
+            </Field>
+            <Field label="Intended major" htmlFor="profile-college-major">
+              <input id="profile-college-major" value={college.major} onChange={(e) => setCollege("major", e.target.value)} list="major-options" maxLength={40} className={inputClass} placeholder="Pick or type" />
+              <datalist id="major-options">
+                {MAJORS.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            </Field>
+          </div>
+        </section>
+      </div>
+    </details>
+  );
+}
+
+/** Phone preview: name plus one line, which shows the season's numbers while they're being filled in. */
+function PreviewStrip({ profile, showStats, open, onToggle }: { profile: Profile; showStats: boolean; open: boolean; onToggle: () => void }) {
+  const sub = [profile.positions.join(" / "), profile.club.trim()].filter(Boolean).join(" · ");
+  const stats = statItems(profile)
+    .filter((s) => s.value)
+    .map((s) => `${s.value} ${s.label.toLowerCase()}`)
+    .join(" · ");
+  return (
+    <div className={`${card} flex items-center gap-3 p-2.5`}>
+      <Avatar profile={profile} className="size-12 text-base" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] leading-none font-semibold uppercase tracking-[0.18em] text-accent">Live preview</p>
+        <p className="mt-1 truncate font-display text-lg leading-tight font-extrabold uppercase">{profile.name.trim() || <span className="text-muted/50">Your name</span>}</p>
+        {showStats && stats ? <p className="truncate text-xs font-semibold text-accent">{stats}</p> : <p className="truncate text-xs text-muted">{sub || "Position · Club"}</p>}
+      </div>
+      <button type="button" aria-expanded={open} aria-controls="full-preview" onClick={onToggle} className={`${secondaryButton} min-h-10 shrink-0 px-4`}>
+        {open ? "Hide" : "Full card"}
+      </button>
+    </div>
+  );
+}
+
+function Avatar({ profile, className = "" }: { profile: Profile; className?: string }) {
+  const initials = profile.name
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return (
+    <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-bg font-display font-extrabold text-accent ring-1 ring-line ${className}`}>
+      {profile.photo ? (
+        // eslint-disable-next-line @next/next/no-img-element -- user upload stored as a data URL
+        <img src={profile.photo} alt="" className="size-full object-cover" />
+      ) : (
+        initials || (
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-1/2 text-muted/50" fill="currentColor">
+            <path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.4 0-8 2.5-8 5.5V21h16v-1.5c0-3-3.6-5.5-8-5.5Z" />
+          </svg>
+        )
+      )}
+    </span>
   );
 }
 

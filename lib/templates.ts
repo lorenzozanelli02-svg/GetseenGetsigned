@@ -1,5 +1,5 @@
 import { ageFrom, formatDate } from "./dates";
-import { formatHeight, POSITION_NAMES } from "./profile";
+import { formatHeight, isDefensive, POSITION_NAMES } from "./profile";
 import type { Profile, RecipientType } from "./store";
 
 /**
@@ -54,8 +54,7 @@ export function buildMessage({ type, club, contactName, profile, profileUrl }: M
   const location = p?.contact.location.trim();
   const from = location ? ` from ${location}` : "";
   const signOff = [name, p?.contact.phone.trim(), p?.contact.email.trim()].filter(Boolean) as string[];
-  const trials = p?.availability.trials.trim();
-  const gradYear = p?.education.graduationYear.trim();
+  const gradYear = p?.college.graduationYear.trim();
   const classOf = gradYear ? `Class of ${gradYear}` : "[Class of 20XX]";
 
   if (type === "non-league") {
@@ -92,7 +91,6 @@ export function buildMessage({ type, club, contactName, profile, profileUrl }: M
         `- Position: ${allPositions}`,
         `- ${foot}, ${height}`,
         `- ${season === "this" ? "This season" : `${season} season`}: ${statLine || "[appearances, goals, assists]"}`,
-        ...(trials ? [`- Available for trials: ${trials}`] : []),
         "",
         `Highlights: ${video}`,
         ...(match ? [`Full match: ${match}`] : []),
@@ -118,7 +116,6 @@ export function buildMessage({ type, club, contactName, profile, profileUrl }: M
       "",
       "Player information:",
       `- Graduation year: ${classOf}`,
-      ...(p?.contact.nationality.trim() ? [`- Nationality: ${p.contact.nationality.trim()}`] : []),
       `- Date of birth: ${p?.dob ? formatDate(p.dob) : "[date of birth]"}`,
       `- Position: ${allPositions}`,
       `- Height: ${height}`,
@@ -126,9 +123,8 @@ export function buildMessage({ type, club, contactName, profile, profileUrl }: M
       `- ${season === "this" ? "This season" : `${season} season`}: ${statLine || "[appearances, goals, assists]"}`,
       "",
       "Academics:",
-      ...(p?.education.school.trim() ? [`- School: ${p.education.school.trim()}`] : []),
-      p?.education.grades.trim() ? `- Grades: ${p.education.grades.trim()}` : "- GPA: [your GPA]",
-      "- Intended major: [your intended major]",
+      `- GPA: ${p?.college.gpa.trim() || "[your GPA]"}`,
+      `- Intended major: ${p?.college.major.trim() || "[your intended major]"}`,
       "",
       `Highlight video: ${video}`,
       ...(match ? [`Full match: ${match}`] : []),
@@ -151,7 +147,7 @@ function seasonStats(p: Profile | null): string {
     appearances && `played ${appearances} games`,
     goals && `scored ${goals}`,
     assists && `set up ${assists}`,
-    cleanSheets && `kept ${cleanSheets} clean sheets`,
+    isDefensive(p) && cleanSheets && `kept ${cleanSheets} clean sheets`,
   ].filter(Boolean) as string[];
   if (parts.length < 2) return parts.join("");
   return `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;

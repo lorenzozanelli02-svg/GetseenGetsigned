@@ -19,12 +19,15 @@ export function Field({
   label,
   htmlFor,
   hint,
+  required = false,
   className = "",
   children,
 }: {
   label: string;
   htmlFor?: string;
   hint?: React.ReactNode;
+  /** Shows a green asterisk after the label. */
+  required?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -32,6 +35,7 @@ export function Field({
     <div className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
       <label htmlFor={htmlFor} className="text-sm font-medium text-ink/90">
         {label}
+        {required && <span className="text-accent"> *</span>}
       </label>
       {children}
       {hint && <p className="text-xs leading-relaxed text-muted">{hint}</p>}
@@ -48,12 +52,12 @@ export function Section({ title, children }: { title: string; children: React.Re
   );
 }
 
-export function PageHeader({ title, intro, children }: { title: string; intro?: string; children?: React.ReactNode }) {
+export function PageHeader({ title, intro, introClassName = "", children }: { title: string; intro?: string; introClassName?: string; children?: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div className="max-w-2xl">
         <h1 className="font-display text-4xl leading-[0.95] font-extrabold uppercase text-balance sm:text-5xl">{title}</h1>
-        {intro && <p className="mt-3 text-base leading-relaxed text-muted">{intro}</p>}
+        {intro && <p className={`mt-3 text-base leading-relaxed text-muted ${introClassName}`}>{intro}</p>}
       </div>
       {children && <div className="flex flex-wrap items-center gap-3">{children}</div>}
     </div>

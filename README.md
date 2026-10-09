@@ -52,7 +52,7 @@ Buying unlocks `/dashboard` and four tools. Every dashboard page checks access f
 | Tool | Address | What it does |
 | --- | --- | --- |
 | Dashboard | `/dashboard` | Progress from each tool and the follow-ups due today or overdue |
-| Profile Builder | `/dashboard/profile` | Form with a live player card; autosaves. Makes the public page and a one-page PDF CV with a QR code |
+| Profile Builder | `/dashboard/profile` | Five short steps (only name, position and club are required) plus an optional "Add more" section, with a live player card; autosaves. Makes the public page and a one-page PDF CV with a QR code |
 | Message Builder | `/dashboard/messages` | Messages for non-league managers, trial requests and US college coaches, filled in from the profile |
 | Outreach Tracker | `/dashboard/tracker` | Clubs contacted, status and follow-ups. Table on desktop, cards on mobile |
 | Guide | `/dashboard/guide` | Chapters with previous/next and read ticks |
